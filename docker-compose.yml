@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AgriConnect — Docker Compose
+# Spins up: API server + PostgreSQL database
+# Usage: docker compose up --build
+# ─────────────────────────────────────────────────────────────────────────────
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL Database ────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: agriconnect-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       agriconnect
+      POSTGRES_USER:     agriconnect_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme_in_production}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql   # auto-runs on first start
+      - ./seed.sql:/docker-entrypoint-initdb.d/02_seed.sql       # demo seed data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agriconnect_user -d agriconnect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── API Backend ────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agriconnect-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV:     ${NODE_ENV:-production}
+      PORT:         3000
+      DATABASE_URL: postgresql://agriconnect_user:${DB_PASSWORD:-changeme_in_production}@db:5432/agriconnect
+      MOMO_API_KEY: ${MOMO_API_KEY:-}
+      JWT_SECRET:   ${JWT_SECRET:-change_this_secret_in_production}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend/server.js:/app/backend/server.js   # hot-reload in dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 20s
+      timeout: 8s
+      retries: 3
+
+  # ── Static Frontend (nginx) ────────────────────────────────────────────────
+  web:
+    image: nginx:alpine
+    container_name: agriconnect-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot_www:/var/www/certbot:ro
+      - certbot_conf:/etc/letsencrypt:ro
+
+volumes:
+  pg_data:
+  certbot_www:
+  certbot_conf:
