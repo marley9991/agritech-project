@@ -815,6 +815,49 @@ app.use((err, req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`AgriConnect API running on port ${PORT}`));
+
+// ─── Auto-initialize database schema + seed data on first boot ─────────────
+// Render's free tier has no Shell tab for manual psql commands, so we check
+// whether the schema has been applied yet and, if not, apply it automatically.
+const fs = require('fs');
+
+async function initDatabaseIfNeeded() {
+  try {
+    const { rows } = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'users'
+      ) AS exists;
+    `);
+
+    if (rows[0].exists) {
+      console.log('✓ Database schema already initialized — skipping init.');
+      return;
+    }
+
+    console.log('⚙ No schema detected. Running agriconnect_schema.sql...');
+    const schemaPath = path.join(__dirname, 'agriconnect_schema.sql');
+    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+    await db.query(schemaSql);
+    console.log('✓ Schema created successfully.');
+
+    const seedPath = path.join(__dirname, 'seed.sql');
+    if (fs.existsSync(seedPath)) {
+      console.log('⚙ Running seed.sql...');
+      const seedSql = fs.readFileSync(seedPath, 'utf8');
+      await db.query(seedSql);
+      console.log('✓ Seed data loaded successfully.');
+    } else {
+      console.log('ℹ No seed.sql found — skipping seed step.');
+    }
+  } catch (err) {
+    console.error('✗ Database auto-init failed:', err.message);
+    console.error('  Server will still start, but API calls may fail until schema is fixed.');
+  }
+}
+
+initDatabaseIfNeeded().finally(() => {
+  app.listen(PORT, () => console.log(`AgriConnect API running on port ${PORT}`));
+});
 
 module.exports = app;
