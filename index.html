@@ -455,10 +455,26 @@ tr:hover td { background: var(--navy-lit); }
 const { useState, useEffect, useRef, useCallback } = React;
 
 /* ═══════════════════════════════════════════════════════
-   MOCK DATA  (replaces live API for demo purposes)
-   In production: replace each function with fetch() to
-   the Express backend endpoints from server.js
+   LIVE API + MOCK FALLBACK
+   Points to live Render backend. Falls back to mock data
+   automatically if the API is unreachable.
 ═══════════════════════════════════════════════════════ */
+const API_BASE = 'https://agriconnect-api-kgep.onrender.com';
+
+async function apiFetch(path, options = {}) {
+  try {
+    const res = await fetch(API_BASE + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } catch (err) {
+    console.warn('API fallback to mock:', path, err.message);
+    return null;
+  }
+}
+
 const MOCK = {
   user: { user_id: 2, full_name: 'Kofi Mensah', role: 'buyer', business_name: "Kofi's Kitchen", region: 'Greater Accra', phone: '+233209002002', avg_rating: 4.8 },
   products: [
@@ -662,6 +678,21 @@ function Marketplace({ onNavigate }) {
   const [qty, setQty] = useState(1);
   const [toast, setToast] = useState(null);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [liveProducts, setLiveProducts] = useState(null);
+
+  useEffect(() => {
+    apiFetch('/api/products?limit=20').then(data => {
+      if (data && data.products) {
+        // Add emoji mapping for display
+        const emojiMap = {tomato:'🍅',pepper:'🌶️',leafy_greens:'🥬',garden_egg:'🫑',okra:'🥒',other:'🌾'};
+        setLiveProducts(data.products.map(p => ({
+          ...p, emoji: emojiMap[p.crop_category] || '🌾'
+        })));
+      }
+    });
+  }, []);
+
+  const allProducts = liveProducts || MOCK.products;
 
   const cats = [
     {id:'all',label:'All Crops'},
@@ -672,18 +703,32 @@ function Marketplace({ onNavigate }) {
     {id:'garden_egg',label:'🫑 Garden Eggs'},
   ];
 
-  const filtered = MOCK.products.filter(p =>
+  const filtered = allProducts.filter(p =>
     (filter==='all' || p.crop_category===filter) &&
     (!search || p.crop_name.toLowerCase().includes(search.toLowerCase()) || p.farmer_name.toLowerCase().includes(search.toLowerCase()))
   );
 
   function openDetail(p) { setSelected(p); setQty(1); }
 
-  function placeOrder() {
+  async function placeOrder() {
     setShowCheckout(false);
+    // POST to live API
+    const result = await apiFetch('/api/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        buyer_id: 2,
+        product_id: selected.product_id,
+        quantity_ordered: qty,
+        delivery_address: '14 Liberation Road, Accra',
+        delivery_latitude: 5.6037,
+        delivery_longitude: -0.1870,
+      }),
+    });
     setSelected(null);
-    setToast(`Order placed for ${qty} × ${selected.crop_name}`);
-    setTimeout(() => onNavigate('dispatch'), 1200);
+    setToast(result
+      ? `Order placed! #${result.order?.order_id} — GHS ${result.order?.grand_total}`
+      : `Order placed for ${qty} × ${selected.crop_name}`);
+    setTimeout(() => onNavigate('dispatch'), 1400);
   }
 
   const score = selected ? computeSpoilageScore(selected.harvested_at, selected.crop_category) : 0;
@@ -801,13 +846,28 @@ function Dispatch({ onNavigate }) {
   const [matched, setMatched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
-  const order = MOCK.orders[0];
-  const score = computeSpoilageScore(MOCK.products[0].harvested_at, MOCK.products[0].crop_category);
+  const [liveOrder, setLiveOrder] = useState(null);
+  useEffect(() => {
+    apiFetch('/api/orders/1').then(data => { if (data) setLiveOrder(data); });
+  }, []);
+  const order = liveOrder || MOCK.orders[0];
+  const score = computeSpoilageScore(order.harvested_at || MOCK.products[0].harvested_at,
+    order.crop_category || MOCK.products[0].crop_category);
   const isUrgent = score > 60;
 
-  function runMatch() {
+  async function runMatch() {
     setLoading(true);
-    setTimeout(() => { setLoading(false); setMatched(true); setToast('Driver matched! Yaw is on the way.'); }, 1800);
+    const result = await apiFetch('/api/logistics/match-driver', {
+      method: 'POST',
+      body: JSON.stringify({ order_id: 1, ambient_temp_c: 33 }),
+    });
+    setLoading(false);
+    setMatched(true);
+    if (result && result.matched_driver) {
+      setToast(`Driver matched: ${result.matched_driver.full_name} — GHS ${result.matched_driver.estimated_cost}`);
+    } else {
+      setToast('Driver matched! Yaw is on the way.');
+    }
   }
 
   const weights = isUrgent
@@ -966,7 +1026,23 @@ function Tracking() {
 /* ── Orders ── */
 function Orders({ onNavigate }) {
   const [tab, setTab] = useState('all');
-  const filtered = tab==='all' ? MOCK.orders : MOCK.orders.filter(o=>o.status===tab);
+  const [liveOrders, setLiveOrders] = useState(null);
+
+  useEffect(() => {
+    const emojiMap = {tomato:'🍅',pepper:'🌶️',leafy_greens:'🥬',garden_egg:'🫑',okra:'🥒',other:'🌾'};
+    apiFetch('/api/users/2/orders?role=buyer').then(data => {
+      if (data && data.orders) {
+        setLiveOrders(data.orders.map(o => ({
+          ...o,
+          emoji: emojiMap[o.crop_category] || '📦',
+          farmer_name: o.farmer_name || 'Farmer',
+        })));
+      }
+    });
+  }, []);
+
+  const allOrders = liveOrders || MOCK.orders;
+  const filtered = tab==='all' ? allOrders : allOrders.filter(o=>o.status===tab);
   return <div className="page">
     <div className="flex-between mb-24">
       <div>
