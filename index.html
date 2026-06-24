@@ -461,12 +461,24 @@ const { useState, useEffect, useRef, useCallback } = React;
 ═══════════════════════════════════════════════════════ */
 const API_BASE = 'https://agriconnect-api-kgep.onrender.com';
 
+function getToken() { return localStorage.getItem('agri_token'); }
+function getUser()  { try { return JSON.parse(localStorage.getItem('agri_user')); } catch { return null; } }
+function setAuth(token, user) {
+  localStorage.setItem('agri_token', token);
+  localStorage.setItem('agri_user', JSON.stringify(user));
+}
+function clearAuth() {
+  localStorage.removeItem('agri_token');
+  localStorage.removeItem('agri_user');
+}
+
 async function apiFetch(path, options = {}) {
   try {
-    const res = await fetch(API_BASE + path, {
-      headers: { 'Content-Type': 'application/json' },
-      ...options,
-    });
+    const token = getToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch(API_BASE + path, { headers, ...options });
+    if (res.status === 401) { clearAuth(); window.location.reload(); return null; }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return await res.json();
   } catch (err) {
@@ -716,7 +728,7 @@ function Marketplace({ onNavigate }) {
     const result = await apiFetch('/api/orders', {
       method: 'POST',
       body: JSON.stringify({
-        buyer_id: 2,
+        buyer_id: currentUser?.user_id || 2,
         product_id: selected.product_id,
         quantity_ordered: qty,
         delivery_address: '14 Liberation Road, Accra',
@@ -1030,7 +1042,7 @@ function Orders({ onNavigate }) {
 
   useEffect(() => {
     const emojiMap = {tomato:'🍅',pepper:'🌶️',leafy_greens:'🥬',garden_egg:'🫑',okra:'🥒',other:'🌾'};
-    apiFetch('/api/users/2/orders?role=buyer').then(data => {
+    apiFetch('/api/my/orders').then(data => {
       if (data && data.orders) {
         setLiveOrders(data.orders.map(o => ({
           ...o,
@@ -1200,12 +1212,139 @@ const PAGES = [
   { id:'ussd',      label:'USSD / SMS', icon:'📟' },
 ];
 
+// ── Login / Register Page ────────────────────────────────────────────────────
+function AuthPage({ onLogin }) {
+  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [form, setForm] = useState({ phone_number:'', password:'', full_name:'', role:'buyer',
+    business_name:'', farm_name:'', vehicle_type:'pickup_truck' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  function setF(k, v) { setForm(f => ({...f, [k]: v})); }
+
+  async function handleSubmit() {
+    setError(''); setLoading(true);
+    try {
+      const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const body = mode === 'login'
+        ? { phone_number: form.phone_number, password: form.password }
+        : { ...form };
+      const res = await fetch(API_BASE + endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || 'Something went wrong'); setLoading(false); return; }
+      setAuth(data.token, data.user);
+      onLogin(data.user);
+    } catch (err) { setError('Network error — check your connection'); setLoading(false); }
+  }
+
+  return <div style={{display:'flex',alignItems:'center',justifyContent:'center',
+    height:'100vh',background:'var(--navy)',padding:24}}>
+    <div style={{width:'100%',maxWidth:420}}>
+      {/* Logo */}
+      <div style={{textAlign:'center',marginBottom:32}}>
+        <div style={{width:56,height:56,borderRadius:14,background:'var(--green)',
+          display:'flex',alignItems:'center',justifyContent:'center',
+          fontSize:26,fontWeight:800,color:'var(--navy)',margin:'0 auto 12px'}}>A</div>
+        <div style={{fontSize:24,fontWeight:800,color:'var(--white)'}}>AgriConnect</div>
+        <div style={{fontSize:13,color:'var(--muted)',marginTop:4}}>Farm to Buyer. Direct.</div>
+      </div>
+
+      {/* Tab toggle */}
+      <div style={{display:'flex',background:'var(--navy-lit)',borderRadius:12,padding:4,marginBottom:24}}>
+        {['login','register'].map(m => <button key={m} onClick={()=>{setMode(m);setError('');}}
+          style={{flex:1,padding:'9px 0',borderRadius:9,border:'none',cursor:'pointer',
+            fontSize:13,fontWeight:600,transition:'all 0.15s',
+            background:mode===m?'var(--navy-mid)':'transparent',
+            color:mode===m?'var(--white)':'var(--muted)'}}>
+          {m === 'login' ? 'Sign In' : 'Register'}
+        </button>)}
+      </div>
+
+      <div className="card">
+        {mode === 'register' && <>
+          <div className="form-group">
+            <label className="form-label">Full Name</label>
+            <input className="form-input" placeholder="Kofi Mensah" value={form.full_name}
+              onChange={e=>setF('full_name',e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">I am a...</label>
+            <div style={{display:'flex',gap:8}}>
+              {[['buyer','🛒 Buyer'],['farmer','🌱 Farmer'],['driver','🚛 Driver']].map(([r,l])=>
+                <button key={r} onClick={()=>setF('role',r)}
+                  style={{flex:1,padding:'10px 4px',borderRadius:10,border:'none',cursor:'pointer',
+                    fontSize:12,fontWeight:600,
+                    background:form.role===r?'var(--green)':'var(--navy-lit)',
+                    color:form.role===r?'var(--navy)':'var(--muted)'}}>
+                  {l}
+                </button>)}
+            </div>
+          </div>
+          {form.role==='buyer' && <div className="form-group">
+            <label className="form-label">Business Name (optional)</label>
+            <input className="form-input" placeholder="Kofi's Kitchen" value={form.business_name}
+              onChange={e=>setF('business_name',e.target.value)} />
+          </div>}
+          {form.role==='farmer' && <div className="form-group">
+            <label className="form-label">Farm Name (optional)</label>
+            <input className="form-input" placeholder="Asante Fresh Farm" value={form.farm_name}
+              onChange={e=>setF('farm_name',e.target.value)} />
+          </div>}
+          {form.role==='driver' && <div className="form-group">
+            <label className="form-label">Vehicle Type</label>
+            <select className="form-select" value={form.vehicle_type} onChange={e=>setF('vehicle_type',e.target.value)}>
+              <option value="pickup_truck">Pickup Truck</option>
+              <option value="box_truck">Box Truck</option>
+              <option value="tricycle">Tricycle</option>
+            </select>
+          </div>}
+        </>}
+
+        <div className="form-group">
+          <label className="form-label">Phone Number (MoMo)</label>
+          <input className="form-input" type="tel" placeholder="+233 244 000 000"
+            value={form.phone_number} onChange={e=>setF('phone_number',e.target.value)} />
+        </div>
+        <div className="form-group" style={{marginBottom:0}}>
+          <label className="form-label">Password</label>
+          <input className="form-input" type="password" placeholder="••••••••"
+            value={form.password} onChange={e=>setF('password',e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&handleSubmit()} />
+        </div>
+
+        {error && <div style={{marginTop:12,padding:'10px 14px',background:'var(--red-bg)',
+          border:'1px solid rgba(231,76,60,0.3)',borderRadius:10,fontSize:12,color:'var(--red)'}}>
+          {error}
+        </div>}
+
+        <button onClick={handleSubmit} disabled={loading}
+          className="btn btn-primary btn-lg" style={{width:'100%',marginTop:20}}>
+          {loading ? 'Please wait...' : mode==='login' ? 'Sign In →' : 'Create Account →'}
+        </button>
+      </div>
+
+      <div style={{textAlign:'center',marginTop:16,fontSize:12,color:'var(--muted)'}}>
+        Supported by GDSS & GIZ PSInno Programme
+      </div>
+    </div>
+  </div>;
+}
+
 function App() {
   const [page, setPage] = useState('dashboard');
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(getUser());
 
   function navigate(p) { setPage(p); setSidebarOpen(false); }
+  function handleLogin(user) { setCurrentUser(user); }
+  function handleLogout() { clearAuth(); setCurrentUser(null); }
+
+  // If not logged in, show auth page
+  if (!currentUser) return <AuthPage onLogin={handleLogin} />;
 
   const pageTitles = { dashboard:'Dashboard', market:'Marketplace', orders:'My Orders',
     dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', ussd:'USSD Mode' };
@@ -1241,13 +1380,15 @@ function App() {
           </button>)}
         </div>
         <div className="sidebar-footer">
-          <div className="user-pill">
-            <Avatar name="Kofi Mensah" size={32} />
+          <div className="user-pill" style={{cursor:'default'}}>
+            <Avatar name={currentUser.full_name} size={32} />
             <div style={{flex:1,minWidth:0}}>
-              <div className="user-name">Kofi Mensah</div>
-              <div className="user-role">Buyer · Kofi's Kitchen</div>
+              <div className="user-name">{currentUser.full_name}</div>
+              <div className="user-role" style={{textTransform:'capitalize'}}>{currentUser.role}{currentUser.business_name?' · '+currentUser.business_name:''}</div>
             </div>
-            <span style={{color:'var(--muted)',fontSize:12}}>⚙</span>
+            <button onClick={handleLogout} title="Sign out"
+              style={{background:'none',border:'none',color:'var(--muted)',fontSize:14,cursor:'pointer',padding:4}}
+              title="Sign out">⏻</button>
           </div>
         </div>
       </nav>
@@ -1261,7 +1402,7 @@ function App() {
             <input placeholder="Search..." />
           </div>
           <div className="topbar-icon"><span>🔔</span><div className="notif-dot"></div></div>
-          <Avatar name="Kofi Mensah" size={36} />
+          <Avatar name={currentUser.full_name} size={36} />
         </div>
 
         <div style={{flex:1,overflowY:'auto'}}>
