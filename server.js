@@ -111,10 +111,23 @@ app.post('/api/auth/register', async (req, res) => {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
+      // Ensure regions exist before inserting user
+      await client.query(`
+        INSERT INTO regions (region_name) VALUES
+          ('Greater Accra'),('Volta Region'),('Central Region'),
+          ('Eastern Region'),('Western Region')
+        ON CONFLICT (region_name) DO NOTHING
+      `);
+      // Resolve region_id safely — default to Greater Accra (1st region)
+      const { rows: [reg] } = await client.query(
+        `SELECT region_id FROM regions ORDER BY region_id LIMIT 1`
+      );
+      const safeRegionId = region_id || (reg ? reg.region_id : null);
+
       const { rows: [user] } = await client.query(
         `INSERT INTO users (full_name, phone_number, role, region_id, language_pref, latitude, longitude, password_hash)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING user_id, full_name, phone_number, role, region_id, language_pref`,
-        [full_name, phone_number, role, region_id, language_pref, latitude||0, longitude||0, hashed]
+        [full_name, phone_number, role, safeRegionId, language_pref, latitude||0, longitude||0, hashed]
       );
       // Role-specific profile
       if (role === 'farmer') {
