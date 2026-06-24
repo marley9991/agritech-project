@@ -1240,15 +1240,109 @@ function AuthPage({ onLogin }) {
     } catch (err) { setError('Network error — check your connection'); setLoading(false); }
   }
 
-  return <div style={{display:'flex',alignItems:'center',justifyContent:'center',
-    height:'100vh',background:'var(--navy)',padding:24}}>
-    <div style={{width:'100%',maxWidth:420}}>
+  const RightPanel = () => <div style={{
+    flex:1, background:'linear-gradient(135deg, #0a2a1a 0%, #0D1B2A 40%, #142438 100%)',
+    display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+    padding:48, position:'relative', overflow:'hidden'
+  }}>
+    {/* Background decorative circles */}
+    <div style={{position:'absolute',top:-80,right:-80,width:320,height:320,borderRadius:'50%',
+      background:'rgba(46,204,113,0.06)',border:'1px solid rgba(46,204,113,0.1)'}}></div>
+    <div style={{position:'absolute',bottom:-120,left:-60,width:400,height:400,borderRadius:'50%',
+      background:'rgba(46,204,113,0.04)',border:'1px solid rgba(46,204,113,0.08)'}}></div>
+
+    {/* Farm SVG Illustration */}
+    <svg viewBox="0 0 400 300" style={{width:'100%',maxWidth:440,marginBottom:32}} xmlns="http://www.w3.org/2000/svg">
+      {/* Sky */}
+      <rect x="0" y="0" width="400" height="200" fill="#0a1a0f" rx="16"/>
+      {/* Stars */}
+      {[[40,30],[80,20],[150,40],[220,15],[290,35],[350,25],[370,50],[20,60]].map(([x,y],i)=>
+        <circle key={i} cx={x} cy={y} r="1.5" fill="#F4C430" opacity="0.7"/>
+      )}
+      {/* Moon */}
+      <circle cx="360" cy="40" r="18" fill="#F4C430" opacity="0.9"/>
+      <circle cx="368" cy="34" r="14" fill="#0a1a0f"/>
+      {/* Hills */}
+      <ellipse cx="100" cy="210" rx="160" ry="60" fill="#0d2b15"/>
+      <ellipse cx="320" cy="220" rx="140" ry="55" fill="#0a2211"/>
+      {/* Ground */}
+      <rect x="0" y="200" width="400" height="100" fill="#071a0a" rx="0"/>
+      {/* Barn */}
+      <rect x="60" y="130" width="80" height="80" fill="#8B2500" rx="2"/>
+      <polygon points="50,130 140,130 100,95" fill="#A63000"/>
+      <rect x="90" y="170" width="20" height="40" fill="#3a1500"/>
+      <rect x="65" y="140" width="22" height="22" fill="#F4C430" opacity="0.6" rx="2"/>
+      <rect x="113" y="140" width="22" height="22" fill="#F4C430" opacity="0.4" rx="2"/>
+      {/* Silo */}
+      <rect x="150" y="150" width="28" height="60" fill="#6b6b6b" rx="2"/>
+      <ellipse cx="164" cy="150" rx="14" ry="7" fill="#888"/>
+      {/* Trees */}
+      {[[220,170],[250,160],[275,175]].map(([x,y],i)=><g key={i}>
+        <rect x={x-3} y={y} width="6" height="30" fill="#3d2b1a"/>
+        <ellipse cx={x} cy={y} rx="16" ry="22" fill="#1a5c2a"/>
+        <ellipse cx={x} cy={y-8} rx="12" ry="16" fill="#2ECC71" opacity="0.7"/>
+      </g>)}
+      {/* Tractor */}
+      <rect x="290" y="195" width="60" height="25" fill="#E74C3C" rx="4"/>
+      <rect x="310" y="182" width="30" height="18" fill="#c0392b" rx="3"/>
+      <circle cx="300" cy="222" r="10" fill="#333" stroke="#555" strokeWidth="2"/>
+      <circle cx="340" cy="222" r="13" fill="#333" stroke="#555" strokeWidth="2"/>
+      <circle cx="300" cy="222" r="4" fill="#666"/>
+      <circle cx="340" cy="222" r="5" fill="#666"/>
+      {/* Crop rows */}
+      {[0,1,2,3,4].map(i=><g key={i}>
+        <line x1={20+i*8} y1="240" x2={20+i*8} y2="255" stroke="#2ECC71" strokeWidth="1.5" opacity="0.6"/>
+        <ellipse cx={20+i*8} cy="238" rx="4" ry="3" fill="#2ECC71" opacity="0.5"/>
+      </g>)}
+      {/* AgriConnect truck label */}
+      <rect x="290" y="186" width="38" height="10" fill="white" rx="2" opacity="0.15"/>
+      {/* Path/road */}
+      <ellipse cx="200" cy="265" rx="180" ry="12" fill="#0d2010" opacity="0.5"/>
+    </svg>
+
+    {/* Stats pills */}
+    <div style={{display:'flex',gap:12,marginBottom:32,flexWrap:'wrap',justifyContent:'center'}}>
+      {[
+        {icon:'🌱',label:'Farmers',value:'200+'},
+        {icon:'🛒',label:'Buyers',value:'500+'},
+        {icon:'🚛',label:'Drivers',value:'50+'},
+      ].map(s=><div key={s.label} style={{
+        background:'rgba(46,204,113,0.1)',border:'1px solid rgba(46,204,113,0.2)',
+        borderRadius:12,padding:'10px 18px',textAlign:'center'
+      }}>
+        <div style={{fontSize:18}}>{s.icon}</div>
+        <div style={{fontSize:18,fontWeight:800,color:'var(--green)'}}>{s.value}</div>
+        <div style={{fontSize:11,color:'var(--muted)'}}>{s.label}</div>
+      </div>)}
+    </div>
+
+    <div style={{textAlign:'center',maxWidth:340}}>
+      <div style={{fontSize:22,fontWeight:800,color:'var(--white)',marginBottom:8}}>
+        Eliminating Post-Harvest Loss
+      </div>
+      <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.7}}>
+        Connecting smallholder farmers directly to buyers across Greater Accra, Volta, and Central regions —
+        with smart logistics matching that moves produce before it spoils.
+      </div>
+    </div>
+
+    <div style={{marginTop:24,display:'flex',alignItems:'center',gap:8}}>
+      <div style={{width:6,height:6,borderRadius:'50%',background:'var(--green)'}}></div>
+      <span style={{fontSize:11,color:'var(--muted)'}}>Supported by GDSS & GIZ PSInno Programme</span>
+    </div>
+  </div>;
+
+  return <div style={{display:'flex',height:'100vh',background:'var(--navy)'}}>
+    {/* Left — Auth form */}
+    <div style={{width:460,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+      padding:32,overflowY:'auto',borderRight:'1px solid rgba(255,255,255,0.07)'}}>
+    <div style={{width:'100%',maxWidth:400}}>
       {/* Logo */}
-      <div style={{textAlign:'center',marginBottom:32}}>
-        <div style={{width:56,height:56,borderRadius:14,background:'var(--green)',
+      <div style={{textAlign:'center',marginBottom:28}}>
+        <div style={{width:52,height:52,borderRadius:14,background:'var(--green)',
           display:'flex',alignItems:'center',justifyContent:'center',
-          fontSize:26,fontWeight:800,color:'var(--navy)',margin:'0 auto 12px'}}>A</div>
-        <div style={{fontSize:24,fontWeight:800,color:'var(--white)'}}>AgriConnect</div>
+          fontSize:24,fontWeight:800,color:'var(--navy)',margin:'0 auto 10px'}}>A</div>
+        <div style={{fontSize:22,fontWeight:800,color:'var(--white)'}}>AgriConnect</div>
         <div style={{fontSize:13,color:'var(--muted)',marginTop:4}}>Farm to Buyer. Direct.</div>
       </div>
 
@@ -1326,9 +1420,11 @@ function AuthPage({ onLogin }) {
         </button>
       </div>
 
-      <div style={{textAlign:'center',marginTop:16,fontSize:12,color:'var(--muted)'}}>
-        Supported by GDSS & GIZ PSInno Programme
-      </div>
+    </div>
+    </div>
+    {/* Right — Illustration panel (hidden on small screens) */}
+    <div style={{flex:1,display:'flex'}} className="auth-right-panel">
+      <RightPanel />
     </div>
   </div>;
 }
