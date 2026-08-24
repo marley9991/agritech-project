@@ -8,6 +8,8 @@ const path = require('path');
 const fs = require('fs');
 const { Pool } = require('pg');
 const crypto = require('crypto');
+const { generateSite } = require('./seo-agent/lib/generator');
+const { ensureSchema: ensureSeoSchema } = require('./seo-agent/lib/storage');
 
 const app = express();
 app.use(express.json());
@@ -22,7 +24,7 @@ app.use((req, res, next) => {
 });
 
 // ── Serve frontend ────────────────────────────────────────────────────────────
-app.use(express.static(__dirname));
+app.use(express.static(__dirname, { redirect: false }));
 
 // ── Database ──────────────────────────────────────────────────────────────────
 const db = new Pool({
@@ -550,6 +552,39 @@ app.get('/api/admin/stats', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ════════════════════════════════════════════════════════════
+// PROGRAMMATIC SEO AGENT
+// ════════════════════════════════════════════════════════════
+
+function requireAdminKey(req, res, next) {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (!key || key !== (process.env.ADMIN_KEY || 'agriconnect-admin-2026')) return res.status(401).json({ error: 'Invalid admin key' });
+  next();
+}
+
+app.get('/api/seo/stats', async (req, res) => {
+  try {
+    const [tools, comparisons, latestRun] = await Promise.all([
+      db.query('SELECT COUNT(*)::int AS count FROM software_tools'),
+      db.query('SELECT COUNT(*)::int AS count FROM tool_comparisons'),
+      db.query('SELECT run_id, status, pages_generated, pages_rejected, started_at, completed_at FROM seo_generation_runs ORDER BY started_at DESC LIMIT 1')
+    ]);
+    res.json({ tools: tools.rows[0].count, comparisons: comparisons.rows[0].count, latest_run: latestRun.rows[0] || null });
+  } catch (err) { res.status(503).json({ error: 'SEO schema is not initialized', detail: err.message }); }
+});
+
+app.post('/api/seo/generate', requireAdminKey, async (req, res) => {
+  try {
+    const result = await generateSite({ pool: db, concurrency: Number(req.body?.concurrency || process.env.SEO_CONCURRENCY || 8) });
+    res.status(result.rejected ? 207 : 200).json({ success: result.rejected === 0, run_id: result.runId, total: result.total, generated: result.generated, rejected: result.rejected });
+  } catch (err) { res.status(500).json({ error: 'SEO generation failed', detail: err.message }); }
+});
+
+app.get('/seo', (req, res) => res.sendFile(path.join(__dirname, 'seo', 'index.html')));
+app.get('/seo/sitemap.xml', (req, res) => res.sendFile(path.join(__dirname, 'seo', 'sitemap.xml')));
+app.get('/seo/alternatives/:slug', (req, res) => res.sendFile(path.join(__dirname, 'seo', 'alternatives', req.params.slug, 'index.html')));
+app.get('/seo/integrations/:slug', (req, res) => res.sendFile(path.join(__dirname, 'seo', 'integrations', req.params.slug, 'index.html')));
+
 // ── SPA fallback ──────────────────────────────────────────────────────────────
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/') || req.path === '/health') return next();
@@ -565,6 +600,8 @@ app.use((err, req, res, _next) => {
 // ── Auto-init DB on first boot ────────────────────────────────────────────────
 async function initDB() {
   try {
+    // Keep the SEO agent schema additive and safe for existing marketplace databases.
+    await ensureSeoSchema(db);
     // Add password_hash column if it doesn't exist (for existing DBs)
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(64)`);
 

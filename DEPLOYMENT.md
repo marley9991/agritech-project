@@ -255,3 +255,30 @@ Browser / Mobile
 - Spoilage Score (0–100) from crop age × ambient temp
 - Composite driver scoring: distance(40-60%) + cost(15-25%) + capacity(20%) + refrigeration(10%) + rating(5%)
 - High-spoilage mode auto-boosts distance weight to 60%
+
+
+---
+
+## Programmatic SEO Agent
+
+The repository includes a database-backed SEO generation pipeline under `seo-agent/`. On a fresh Compose database, `seo-agent/schema.sql` is mounted as an additive initialization script. For an existing database, the API applies this schema at startup.
+
+After the stack is running, seed the 100-tool catalog and generate validated static pages:
+
+```bash
+npm install
+DATABASE_URL=postgresql://agriconnect_user:<password>@localhost:5432/agriconnect npm run seo:seed
+SEO_SITE_URL=https://your-public-domain.example DATABASE_URL=postgresql://agriconnect_user:<password>@localhost:5432/agriconnect npm run seo:generate
+npm run seo:validate
+```
+
+The generator produces comparison pages at `/seo/alternatives/...`, integration pages at `/seo/integrations/...`, an index at `/seo`, and an XML sitemap at `/seo/sitemap.xml`. A protected HTTP trigger is also available:
+
+```bash
+curl -X POST http://localhost:3000/api/seo/generate \
+  -H 'Content-Type: application/json' \
+  -H 'x-admin-key: <ADMIN_KEY>' \
+  -d '{"concurrency":8}'
+```
+
+For a database-free smoke test, run `npm run seo:generate:demo` followed by `npm run seo:validate`. The demo uses deterministic placeholder commercial data and must be replaced with verified pricing, ratings, and approved affiliate destinations before public publication.

@@ -15,6 +15,8 @@ COPY server.js              ./
 COPY index.html              ./
 COPY agriconnect_schema.sql  ./
 COPY seed.sql                ./
+COPY seo-agent               ./seo-agent
+COPY seo                     ./seo
 
 # ── Runtime environment ───────────────────────────────────────────────────────
 ENV NODE_ENV=production
