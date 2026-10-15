@@ -614,10 +614,9 @@ async function apiFetch(path, options = {}) {
   try {
     const token = getToken();
     const headers = { 'Content-Type': 'application/json' };
-    // Demo-mode accounts use mock data locally and should not be sent to the API.
-    if (token && !token.startsWith('demo-token-')) headers['Authorization'] = 'Bearer ' + token;
+    if (token) headers['Authorization'] = 'Bearer ' + token;
     const res = await fetch(API_BASE + path, { headers, ...options });
-    if (res.status === 401 && !token?.startsWith('demo-token-')) { clearAuth(); window.location.reload(); return null; }
+    if (res.status === 401) { clearAuth(); window.location.reload(); return null; }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return await res.json();
   } catch (err) {
@@ -1361,21 +1360,6 @@ function AuthPage({ onLogin }) {
 
   function setF(k, v) { setForm(f => ({...f, [k]: v})); }
 
-  function enterDemoMode() {
-    const demoUser = {
-      user_id: 'demo-' + Date.now(),
-      full_name: form.full_name || 'AgriConnect Demo User',
-      phone_number: form.phone_number,
-      role: form.role,
-      business_name: form.business_name || '',
-      farm_name: form.farm_name || '',
-      demo_mode: true,
-    };
-    localStorage.setItem('agri_demo_password', form.password);
-    setAuth('demo-token-' + Date.now(), demoUser);
-    onLogin(demoUser);
-  }
-
   async function handleSubmit() {
     setError(''); setLoading(true);
     try {
@@ -1391,10 +1375,6 @@ function AuthPage({ onLogin }) {
       if (!res.ok) {
         const serverError = String(data.error || '');
         const isInfrastructureError = /getaddrinfo|enotfound|econnrefused|network|fetch failed/i.test(serverError);
-        if (isInfrastructureError && mode === 'register') {
-          enterDemoMode();
-          return;
-        }
         setError(isInfrastructureError
           ? 'AgriConnect is temporarily unavailable. Please try again in a moment.'
           : (data.error || 'We could not complete that request. Please check your details and try again.'));
@@ -1404,10 +1384,6 @@ function AuthPage({ onLogin }) {
       setAuth(data.token, data.user);
       onLogin(data.user);
     } catch (err) {
-      if (mode === 'register') {
-        enterDemoMode();
-        return;
-      }
       setError('AgriConnect is temporarily unavailable. Please check your connection and try again.');
       setLoading(false);
     }
@@ -1606,13 +1582,13 @@ function App() {
   const [page, setPage] = useState('dashboard');
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // Authentication is intentionally bypassed for the Phase 5 demo. Restore the
-  // AuthPage gate here when the production database and login flow are ready.
-  const [currentUser, setCurrentUser] = useState(getUser() || MOCK.user);
+  const [currentUser, setCurrentUser] = useState(getUser());
 
   function navigate(p) { setPage(p); setSidebarOpen(false); }
   function handleLogin(user) { setCurrentUser(user); }
-  function handleLogout() { clearAuth(); setCurrentUser(MOCK.user); }
+  function handleLogout() { clearAuth(); setCurrentUser(null); }
+
+  if (!currentUser) return <AuthPage onLogin={handleLogin} />;
 
   const pageTitles = { dashboard:'Dashboard', market:'Marketplace', orders:'My Orders',
     dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', ussd:'USSD Mode' };

@@ -267,31 +267,50 @@ app.post('/api/products', requireAuth, requireRole('farmer'), async (req, res) =
 
 // POST /api/orders — buyers only
 app.post('/api/orders', requireAuth, requireRole('buyer'), async (req, res) => {
+  const client = await db.connect();
   try {
     const { product_id, quantity_ordered,
             delivery_address, delivery_latitude, delivery_longitude } = req.body;
-    const { rows: [product] } = await db.query(
-      `SELECT * FROM products WHERE product_id = $1 AND status = 'active'`, [product_id]
+    const quantity = Number(quantity_ordered);
+    if (!Number.isFinite(quantity) || quantity <= 0)
+      return res.status(400).json({ error: 'quantity_ordered must be greater than zero' });
+
+    await client.query('BEGIN');
+    const { rows: [product] } = await client.query(
+      `SELECT * FROM products WHERE product_id = $1 AND status = 'active' FOR UPDATE`, [product_id]
     );
     if (!product) return res.status(404).json({ error: 'Product not found or inactive' });
-    if (product.quantity_available < quantity_ordered)
+    if (Number(product.quantity_available) < quantity)
       return res.status(400).json({ error: 'Insufficient stock' });
-    const total_amount = product.price_per_unit * quantity_ordered;
-    const { rows: [order] } = await db.query(
+    const total_amount = Number(product.price_per_unit) * quantity;
+    const commissionRate = Math.min(Math.max(Number(process.env.COMMISSION_RATE || 0.10), 0), 0.25);
+    const platform_fee = Math.round(total_amount * commissionRate * 100) / 100;
+    const farmer_payout = Math.round((total_amount - platform_fee) * 100) / 100;
+    const { rows: [order] } = await client.query(
       `INSERT INTO orders (buyer_id, farmer_id, product_id, quantity_ordered,
-        unit_price_snapshot, total_amount, grand_total, status,
+        unit_price_snapshot, total_amount, platform_fee, farmer_payout, grand_total, status,
         delivery_address, delivery_latitude, delivery_longitude)
-       VALUES ($1,$2,$3,$4,$5,$6,$6,'awaiting_dispatch',$7,$8,$9) RETURNING *`,
-      [req.user.user_id, product.farmer_id, product_id, quantity_ordered,
-       product.price_per_unit, total_amount,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$6,'pending_payment',$9,$10,$11) RETURNING *`,
+      [req.user.user_id, product.farmer_id, product_id, quantity,
+       product.price_per_unit, total_amount, platform_fee, farmer_payout,
        delivery_address||'', delivery_latitude||0, delivery_longitude||0]
     );
-    await db.query(
-      `UPDATE products SET quantity_available = quantity_available - $1 WHERE product_id = $2`,
-      [quantity_ordered, product_id]
+    await client.query(
+      `UPDATE products SET quantity_available = quantity_available - $1,
+       status = CASE WHEN quantity_available - $1 <= 0 THEN 'sold_out' ELSE status END,
+       updated_at = now() WHERE product_id = $2`, [quantity, product_id]
     );
-    res.status(201).json({ success: true, order });
-  } catch (err) { res.status(400).json({ error: err.message }); }
+    await client.query(
+      `INSERT INTO inventory_logs (product_id, change_type, quantity_delta, resulting_quantity, note)
+       VALUES ($1, 'sale_deduction', $2, $3, $4)`,
+      [product_id, -quantity, Number(product.quantity_available) - quantity, `Order #${order.order_id}`]
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ success: true, order, commission_rate: commissionRate });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(400).json({ error: err.message });
+  } finally { client.release(); }
 });
 
 app.get('/api/orders/:orderId', requireAuth, async (req, res) => {
@@ -565,33 +584,50 @@ app.use((err, req, res, _next) => {
 // ── Auto-init DB on first boot ────────────────────────────────────────────────
 async function initDB() {
   try {
-    // Add password_hash column if it doesn't exist (for existing DBs)
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(64)`);
-
     const { rows } = await db.query(
       `SELECT EXISTS (SELECT FROM information_schema.tables
        WHERE table_schema='public' AND table_name='users') AS exists`
     );
-    if (rows[0].exists) {
-      console.log('✓ Schema already exists — skipping init.');
-      return;
+    if (!rows[0].exists) {
+      console.log('⚙ First boot — running schema...');
+      await db.query(fs.readFileSync(path.join(__dirname, 'agriconnect_schema.sql'), 'utf8'));
+      console.log('✓ Schema created.');
+      const seedPath = path.join(__dirname, 'seed.sql');
+      if (fs.existsSync(seedPath)) {
+        await db.query(fs.readFileSync(seedPath, 'utf8'));
+        console.log('✓ Seed data loaded.');
+      }
     }
-    console.log('⚙ First boot — running schema...');
-    await db.query(fs.readFileSync(path.join(__dirname, 'agriconnect_schema.sql'), 'utf8'));
-    console.log('✓ Schema created.');
-    const seedPath = path.join(__dirname, 'seed.sql');
-    if (fs.existsSync(seedPath)) {
-      await db.query(fs.readFileSync(seedPath, 'utf8'));
-      console.log('✓ Seed data loaded.');
-    }
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(64)`);
+    await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS platform_fee NUMERIC(10,2) NOT NULL DEFAULT 0`);
+    await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS farmer_payout NUMERIC(12,2) NOT NULL DEFAULT 0`);
+    await db.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS payment_provider VARCHAR(30) NOT NULL DEFAULT 'momo'`);
+    await db.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'pending'`);
+    await db.query(`CREATE TABLE IF NOT EXISTS payment_events (
+      event_id BIGSERIAL PRIMARY KEY,
+      provider VARCHAR(30) NOT NULL,
+      provider_event_id VARCHAR(160) NOT NULL UNIQUE,
+      order_id INTEGER REFERENCES orders(order_id),
+      event_type VARCHAR(80) NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      processed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`);
+    console.log('✓ Production migrations verified.');
   } catch (err) {
     console.error('✗ DB init error:', err.message);
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DB_BOOT_WITHOUT_DB !== 'true') {
+      throw err;
+    }
   }
 }
 
 const PORT = process.env.PORT || 3000;
-initDB().finally(() => {
+initDB().then(() => {
   app.listen(PORT, () => console.log(`AgriConnect API running on port ${PORT}`));
+}).catch(err => {
+  console.error('AgriConnect startup aborted:', err.message);
+  process.exit(1);
 });
 
 module.exports = app;

@@ -169,6 +169,8 @@ CREATE TABLE orders (
     unit_price_snapshot NUMERIC(10,2) NOT NULL,     -- price at time of order
     total_amount    NUMERIC(12,2) NOT NULL,         -- quantity_ordered * unit_price_snapshot
     delivery_fee    NUMERIC(10,2) DEFAULT 0,
+    platform_fee    NUMERIC(10,2) NOT NULL DEFAULT 0, -- AgriConnect commission
+    farmer_payout   NUMERIC(12,2) NOT NULL DEFAULT 0, -- seller amount after commission
     grand_total     NUMERIC(12,2) NOT NULL,         -- total_amount + delivery_fee
     status          order_status NOT NULL DEFAULT 'pending_payment',
     delivery_address VARCHAR(255),
@@ -192,12 +194,28 @@ CREATE TABLE transactions (
     amount          NUMERIC(12,2) NOT NULL,
     momo_reference  VARCHAR(100),                -- provider transaction ref
     escrow_status   VARCHAR(20) NOT NULL DEFAULT 'held', -- 'held', 'released', 'refunded'
+    payment_provider VARCHAR(30) NOT NULL DEFAULT 'momo',
+    payment_status  VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending, successful, failed
     authorized_at   TIMESTAMPTZ,
     released_at     TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_transactions_order ON transactions(order_id);
+
+-- Immutable provider webhook/idempotency log for payment reconciliation.
+CREATE TABLE payment_events (
+    event_id          BIGSERIAL PRIMARY KEY,
+    provider          VARCHAR(30) NOT NULL,
+    provider_event_id VARCHAR(160) NOT NULL UNIQUE,
+    order_id          INTEGER REFERENCES orders(order_id),
+    event_type        VARCHAR(80) NOT NULL,
+    payload           JSONB NOT NULL DEFAULT '{}'::jsonb,
+    processed_at      TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_payment_events_order ON payment_events(order_id);
 
 
 -- ---------------------------------------------------------------------

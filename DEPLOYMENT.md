@@ -8,18 +8,18 @@ Go-live: June 29, 2026
 
 ```
 agriconnect/
-├── schema.sql              # Full DB schema (15 tables, 9 enums, 22 indexes)
+├── agriconnect_schema.sql  # Full DB schema and production commerce tables
 ├── seed.sql                # Demo seed data (farmers, buyers, drivers, orders)
 ├── .env.example            # Environment variable template
 ├── docker-compose.yml      # Full-stack orchestration
 ├── nginx.conf              # Reverse proxy + static file serving
 ├── Dockerfile              # API container build
-├── backend/
-│   ├── server.js           # Express API (Task 5.1 + 5.2)
-│   ├── demo.js             # End-to-end demo script (Task 5.3)
-│   └── package.json
-└── frontend/
-    └── index.html          # Self-contained React frontend
+├── server.js               # Express API
+├── demo.js                 # End-to-end demo script
+├── index.html              # Self-contained React frontend
+├── Dockerfile              # API image
+├── docker-compose.yml      # PostgreSQL + API + Nginx
+└── PRODUCTION_MVP.md       # Revenue and go-live plan
 ```
 
 ---
@@ -112,8 +112,8 @@ Render is the fastest free-tier option for a public judge URL.
 ### Backend API (Web Service)
 1. New → Web Service → Connect your GitHub repo
 2. Settings:
-   - **Build Command:** `cd backend && npm install`
-   - **Start Command:** `node backend/server.js`
+   - **Build Command:** `npm install`
+   - **Start Command:** `node server.js`
    - **Environment:**
      ```
      DATABASE_URL=<paste external db url from step above>
@@ -122,13 +122,13 @@ Render is the fastest free-tier option for a public judge URL.
      ```
 3. After first deploy, run migrations:
    - Go to Shell tab in Render dashboard
-   - `psql $DATABASE_URL -f schema.sql`
+   - `psql $DATABASE_URL -f agriconnect_schema.sql`
    - `psql $DATABASE_URL -f seed.sql`
 
 ### Frontend (Static Site)
 1. New → Static Site → same repo
-2. **Publish directory:** `frontend`
-3. Add environment variable: `VITE_API_URL=https://your-api.onrender.com`
+2. **Publish directory:** `.`
+3. Update `API_BASE` in `index.html` to `https://your-api.onrender.com` before publishing.
 
 ### Result
 - Frontend: `https://agriconnect.onrender.com`
