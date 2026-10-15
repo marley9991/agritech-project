@@ -1606,14 +1606,13 @@ function App() {
   const [page, setPage] = useState('dashboard');
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState(getUser());
+  // Authentication is intentionally bypassed for the Phase 5 demo. Restore the
+  // AuthPage gate here when the production database and login flow are ready.
+  const [currentUser, setCurrentUser] = useState(getUser() || MOCK.user);
 
   function navigate(p) { setPage(p); setSidebarOpen(false); }
   function handleLogin(user) { setCurrentUser(user); }
-  function handleLogout() { clearAuth(); setCurrentUser(null); }
-
-  // If not logged in, show auth page
-  if (!currentUser) return <AuthPage onLogin={handleLogin} />;
+  function handleLogout() { clearAuth(); setCurrentUser(MOCK.user); }
 
   const pageTitles = { dashboard:'Dashboard', market:'Marketplace', orders:'My Orders',
     dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', ussd:'USSD Mode' };
@@ -1655,9 +1654,6 @@ function App() {
               <div className="user-name">{currentUser.full_name}</div>
               <div className="user-role" style={{textTransform:'capitalize'}}>{currentUser.role}{currentUser.business_name?' · '+currentUser.business_name:''}</div>
             </div>
-            <button onClick={handleLogout} title="Sign out"
-              style={{background:'none',border:'none',color:'var(--muted)',fontSize:14,cursor:'pointer',padding:4}}
-              title="Sign out">⏻</button>
           </div>
         </div>
       </nav>
