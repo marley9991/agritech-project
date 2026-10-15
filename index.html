@@ -573,6 +573,16 @@ tr:hover td { background: #f5f8f2; }
   .page h1 { font-size: 20px !important; }
   .auth-right-panel { display: none !important; }
 }
+@media (max-width: 900px) {
+  .auth-page { min-height: 100vh; overflow-y: auto; }
+  .auth-form-panel { width: 100% !important; min-height: 100vh; padding: 24px 18px !important; border-right: 0 !important; }
+  .auth-form-panel > div { max-width: 440px !important; }
+}
+@media (max-width: 480px) {
+  .auth-form-panel { padding: 18px 12px !important; }
+  .auth-form-panel .card { padding: 18px; }
+  .auth-form-panel .form-input, .auth-form-panel .form-select { font-size: 16px; }
+}
 
 </style>
 </head>
@@ -1362,10 +1372,21 @@ function AuthPage({ onLogin }) {
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Something went wrong'); setLoading(false); return; }
+      if (!res.ok) {
+        const serverError = String(data.error || '');
+        const isInfrastructureError = /getaddrinfo|enotfound|econnrefused|network|fetch failed/i.test(serverError);
+        setError(isInfrastructureError
+          ? 'AgriConnect is temporarily unavailable. Please try again in a moment.'
+          : (data.error || 'We could not complete that request. Please check your details and try again.'));
+        setLoading(false);
+        return;
+      }
       setAuth(data.token, data.user);
       onLogin(data.user);
-    } catch (err) { setError('Network error — check your connection'); setLoading(false); }
+    } catch (err) {
+      setError('AgriConnect is temporarily unavailable. Please check your connection and try again.');
+      setLoading(false);
+    }
   }
 
   const RightPanel = () => <div style={{
@@ -1460,9 +1481,9 @@ function AuthPage({ onLogin }) {
     </div>
   </div>;
 
-  return <div style={{display:'flex',height:'100vh',background:'var(--navy)'}}>
+  return <div className="auth-page" style={{display:'flex',height:'100vh',background:'var(--navy)'}}>
     {/* Left — Auth form */}
-    <div style={{width:460,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+    <div className="auth-form-panel" style={{width:460,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
       padding:32,overflowY:'auto',borderRight:'1px solid rgba(255,255,255,0.07)'}}>
     <div style={{width:'100%',maxWidth:400}}>
       {/* Logo */}
