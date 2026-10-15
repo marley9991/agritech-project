@@ -1582,13 +1582,12 @@ function App() {
   const [page, setPage] = useState('dashboard');
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState(getUser());
+  // Temporary demo bypass. Restore the AuthPage gate before production launch.
+  const [currentUser, setCurrentUser] = useState(getUser() || MOCK.user);
 
   function navigate(p) { setPage(p); setSidebarOpen(false); }
   function handleLogin(user) { setCurrentUser(user); }
-  function handleLogout() { clearAuth(); setCurrentUser(null); }
-
-  if (!currentUser) return <AuthPage onLogin={handleLogin} />;
+  function handleLogout() { clearAuth(); setCurrentUser(MOCK.user); }
 
   const pageTitles = { dashboard:'Dashboard', market:'Marketplace', orders:'My Orders',
     dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', ussd:'USSD Mode' };
