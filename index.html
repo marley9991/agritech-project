@@ -682,12 +682,13 @@ function Badge({ type='muted', children }) {
 function StatusBadge({ status }) {
   const map = {
     active:'green', in_transit:'blue', completed:'muted',
-    awaiting_dispatch:'yellow', pending_payment:'yellow',
+    awaiting_dispatch:'yellow', pending_payment:'yellow', payment_submitted:'yellow', payment_verified:'green', payment_rejected:'red',
     matched:'blue', delivered:'green', cancelled:'red',
   };
   const labels = {
     active:'Active', in_transit:'In Transit', completed:'Delivered',
     awaiting_dispatch:'Finding Driver', pending_payment:'Awaiting Payment',
+    payment_submitted:'Payment Submitted', payment_verified:'Payment Verified', payment_rejected:'Payment Rejected',
     matched:'Driver Matched', delivered:'Delivered', cancelled:'Cancelled',
   };
   return <Badge type={map[status]||'muted'}>{labels[status]||status}</Badge>;
@@ -861,24 +862,19 @@ function Marketplace({ onNavigate }) {
   function openDetail(p) { setSelected(p); setQty(1); }
 
   async function placeOrder() {
-    setShowCheckout(false);
-    // POST to live API
-    const result = await apiFetch('/api/orders', {
-      method: 'POST',
-      body: JSON.stringify({
-        buyer_id: currentUser?.user_id || 2,
-        product_id: selected.product_id,
-        quantity_ordered: qty,
-        delivery_address: '14 Liberation Road, Accra',
-        delivery_latitude: 5.6037,
-        delivery_longitude: -0.1870,
-      }),
-    });
-    setSelected(null);
-    setToast(result
-      ? `Order placed! #${result.order?.order_id} — GHS ${result.order?.grand_total}`
-      : `Order placed for ${qty} × ${selected.crop_name}`);
-    setTimeout(() => onNavigate('dispatch'), 1400);
+    const orderId = 2000 + Math.floor(Math.random() * 8000);
+    const total = qty * selected.price_per_unit;
+    const payment = {
+      payment_id: 'MOMO-' + Date.now(), order_id: orderId,
+      crop_name: selected.crop_name, emoji: selected.emoji, quantity: qty,
+      amount: total, payer_name: 'Kofi Mensah', payer_phone: '',
+      momo_reference: '', status: 'pending_payment', submitted_at: new Date().toISOString()
+    };
+    const saved = JSON.parse(localStorage.getItem('agri_manual_payments') || '[]');
+    localStorage.setItem('agri_manual_payments', JSON.stringify([payment, ...saved]));
+    setShowCheckout(false); setSelected(null);
+    setToast(`Order #${orderId} created — submit your MTN MoMo reference`);
+    setTimeout(() => onNavigate('payments'), 900);
   }
 
   const score = selected ? computeSpoilageScore(selected.harvested_at, selected.crop_category) : 0;
@@ -967,25 +963,41 @@ function Marketplace({ onNavigate }) {
       </button>
     </Modal>}
 
-    {selected && showCheckout && <Modal title="Confirm & Pay" sub="Payment held in escrow until delivery confirmation" onClose={()=>setShowCheckout(false)}>
+    {selected && showCheckout && <Modal title="Pay with MTN MoMo" sub="Manual payment verification for the pilot" onClose={()=>setShowCheckout(false)}>
       <div className="card card-sm mb-16">
         <div className="row"><span className="row-label">{selected.crop_name} × {qty}</span><span className="row-val">GHS {qty*selected.price_per_unit}</span></div>
         <div className="divider" style={{margin:'8px 0'}}></div>
-        <div className="row"><span className="row-label">Delivery fee</span><span style={{fontSize:12,color:'var(--muted)'}}>Est. after driver match</span></div>
+        <div className="row"><span className="row-label">Delivery fee</span><span style={{fontSize:12,color:'var(--muted)'}}>Confirmed after driver match</span></div>
         <div className="divider" style={{margin:'8px 0'}}></div>
-        <div className="row"><span style={{fontWeight:700,color:'var(--white)'}}>Escrow hold</span><span style={{fontSize:18,fontWeight:800,color:'var(--yellow)'}}>GHS {qty*selected.price_per_unit}</span></div>
+        <div className="row"><span style={{fontWeight:700,color:'var(--white)'}}>Amount to pay</span><span style={{fontSize:18,fontWeight:800,color:'var(--yellow)'}}>GHS {qty*selected.price_per_unit}</span></div>
+      </div>
+      <div style={{padding:'14px',background:'var(--green-bg)',border:'1px solid rgba(47,107,79,0.18)',borderRadius:'var(--radius-md)',marginBottom:16}}>
+        <div style={{fontWeight:800,color:'var(--green)',marginBottom:6}}>1. Send MTN MoMo</div>
+        <div style={{fontSize:13,color:'var(--white)',lineHeight:1.6}}>Send <strong>GHS {qty*selected.price_per_unit}</strong> to the approved AgriConnect number:</div>
+        <div style={{fontSize:21,fontWeight:800,letterSpacing:'.04em',color:'var(--green)',margin:'8px 0'}}>024 XXX XXXX</div>
+        <div style={{fontSize:11,color:'var(--muted)'}}>Do not share your MoMo PIN or OTP. Your order is only confirmed after manual verification.</div>
       </div>
       <div className="form-group">
-        <label className="form-label">MoMo Number</label>
-        <input className="form-input" type="tel" defaultValue="+233 209 002 002" />
+        <label className="form-label">2. Your MTN MoMo number</label>
+        <input className="form-input" id="manual-payer-phone" type="tel" placeholder="024 000 0000" />
       </div>
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,padding:'10px 12px',background:'var(--green-bg)',borderRadius:'var(--radius-md)',border:'1px solid rgba(46,204,113,0.2)'}}>
-        <span style={{color:'var(--green)'}}>✓</span>
-        <span style={{fontSize:12,color:'var(--muted)'}}>MTN MoMo · Kofi Mensah · Verified</span>
+      <div className="form-group">
+        <label className="form-label">3. MoMo transaction reference</label>
+        <input className="form-input" id="manual-momo-reference" placeholder="e.g. 1234567890" />
       </div>
-      <button className="btn btn-primary btn-lg" style={{width:'100%',marginBottom:8}} onClick={placeOrder}>
-        Authorize Payment — GHS {qty*selected.price_per_unit}
-      </button>
+      <div style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:16,padding:'10px 12px',background:'var(--yellow-bg)',borderRadius:'var(--radius-md)',border:'1px solid rgba(196,119,45,0.2)'}}>
+        <span style={{color:'var(--yellow)'}}>!</span>
+        <span style={{fontSize:12,color:'var(--muted)'}}>After you submit, operations will verify the payment before dispatch. Keep your confirmation SMS.</span>
+      </div>
+      <button className="btn btn-primary btn-lg" style={{width:'100%',marginBottom:8}} onClick={()=>{
+        const phone = document.getElementById('manual-payer-phone')?.value.trim();
+        const reference = document.getElementById('manual-momo-reference')?.value.trim();
+        if (!phone || !reference) { alert('Enter your MoMo number and transaction reference.'); return; }
+        const payments = JSON.parse(localStorage.getItem('agri_manual_payments') || '[]');
+        const payment = { payment_id:'MOMO-'+Date.now(), order_id:2000+Math.floor(Math.random()*8000), crop_name:selected.crop_name, emoji:selected.emoji, quantity:qty, amount:qty*selected.price_per_unit, payer_name:'Kofi Mensah', payer_phone:phone, momo_reference:reference, status:'payment_submitted', submitted_at:new Date().toISOString() };
+        localStorage.setItem('agri_manual_payments', JSON.stringify([payment, ...payments]));
+        setShowCheckout(false); setSelected(null); setToast('Payment reference submitted for verification'); setTimeout(()=>onNavigate('payments'), 700);
+      }}>Submit payment for verification →</button>
       <button className="btn btn-secondary" style={{width:'100%'}} onClick={()=>setShowCheckout(false)}>Cancel</button>
     </Modal>}
   </div>;
@@ -1339,6 +1351,28 @@ function USSD() {
   </div>;
 }
 
+/* ── Manual MTN MoMo verification ── */
+function Payments({ onNavigate }) {
+  const [payments, setPayments] = useState(() => JSON.parse(localStorage.getItem('agri_manual_payments') || '[]'));
+  const [selected, setSelected] = useState(null);
+  const [toast, setToast] = useState(null);
+  function updatePayment(paymentId, status) {
+    const next = payments.map(p => p.payment_id === paymentId ? {...p, status, verified_at:new Date().toISOString(), verified_by:'Demo Operations'} : p);
+    setPayments(next); localStorage.setItem('agri_manual_payments', JSON.stringify(next)); setSelected(null);
+    setToast(status === 'payment_verified' ? 'Payment verified — order ready for dispatch' : 'Payment rejected');
+  }
+  const submitted = payments.filter(p => p.status === 'payment_submitted');
+  const verified = payments.filter(p => p.status === 'payment_verified');
+  return <div className="page">
+    {toast && <Toast message={toast} onDone={()=>setToast(null)} />}
+    <div className="flex-between mb-24"><div><h1 style={{fontSize:20,fontWeight:800}}>MTN MoMo Payments</h1><p className="text-muted">Submit a reference after payment, then track verification status.</p></div><Badge type="yellow">Manual pilot</Badge></div>
+    <div className="stats-grid">{[{label:'Awaiting verification',value:submitted.length,icon:'⌛'},{label:'Verified payments',value:verified.length,icon:'✓'},{label:'Payment channel',value:'MTN MoMo',icon:'📱'},{label:'PIN / OTP',value:'Never collected',icon:'🔒'}].map(s=><div className="stat-card" key={s.label}><div className="stat-accent" style={{background:'var(--green-bg)'}}>{s.icon}</div><div className="stat-label">{s.label}</div><div className="stat-value" style={{fontSize:20}}>{s.value}</div></div>)}</div>
+    <div className="grid-2"><div className="card"><div className="section-title mb-8">How manual verification works</div><p className="text-muted" style={{lineHeight:1.7}}>The buyer sends the exact order amount to the approved AgriConnect MTN MoMo number, then submits the sender number and transaction reference. Operations verifies the payment before dispatch.</p><div className="divider"></div>{[['1','Send the exact amount','024 XXX XXXX'],['2','Submit reference','Keep the confirmation SMS'],['3','Operations verifies','Never share PIN or OTP']].map(([n,l,v])=><div className="row" key={n}><span style={{width:26,height:26,borderRadius:'50%',background:'var(--green)',color:'#fffdf8',display:'inline-flex',alignItems:'center',justifyContent:'center',fontWeight:800}}>{n}</span><span style={{flex:1,marginLeft:10}}><strong>{l}</strong><br/><span className="text-muted">{v}</span></span></div>)}</div><div className="card"><div className="section-title mb-16">Payment safety</div><div style={{padding:14,background:'var(--yellow-bg)',border:'1px solid rgba(196,119,45,.2)',borderRadius:'var(--radius-md)',fontSize:12,color:'var(--muted)',lineHeight:1.7}}>This pilot records payment references for operations review. It does not connect to MTN automatically and never asks for a MoMo PIN or OTP.</div><div className="divider"></div><div className="row"><span className="row-label">Approved number</span><strong>024 XXX XXXX</strong></div><div className="row"><span className="row-label">Release rule</span><strong>Verify before dispatch</strong></div></div></div>
+    <div className="card mt-16" style={{padding:0,overflow:'hidden'}}><div style={{padding:'18px 20px',borderBottom:'1px solid var(--border)'}}><div className="section-title">Payment queue</div><div className="text-muted">Demo operations view</div></div>{payments.length ? payments.map(p=><div key={p.payment_id} style={{display:'flex',alignItems:'center',gap:12,padding:'16px 20px',borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}><span style={{fontSize:28}}>{p.emoji||'📱'}</span><div style={{flex:1,minWidth:180}}><strong>Order #{p.order_id} · {p.crop_name}</strong><div className="text-muted">{p.payer_phone||'No payer number'} · Ref: {p.momo_reference||'Not submitted'}</div></div><div style={{textAlign:'right'}}><StatusBadge status={p.status}/><div style={{fontWeight:800,color:'var(--yellow)',marginTop:4}}>GHS {p.amount}</div></div>{p.status==='payment_submitted'&&<button className="btn btn-primary btn-sm" onClick={()=>setSelected(p)}>Review</button>}</div>) : <div className="empty-state"><div className="empty-icon">📱</div><div className="empty-text">No payment references submitted yet. Start from Marketplace checkout.</div><button className="btn btn-primary" style={{marginTop:16}} onClick={()=>onNavigate('market')}>Browse produce →</button></div>}</div>
+    {selected && <Modal title={`Review Order #${selected.order_id}`} sub="Confirm the payment using your MTN MoMo records." onClose={()=>setSelected(null)}><div className="card card-sm mb-16"><div className="row"><span className="row-label">Amount expected</span><strong>GHS {selected.amount}</strong></div><div className="row"><span className="row-label">Payer number</span><strong>{selected.payer_phone}</strong></div><div className="row"><span className="row-label">Transaction reference</span><strong className="font-mono">{selected.momo_reference}</strong></div></div><div style={{display:'flex',gap:8}}><button className="btn btn-primary" style={{flex:1}} onClick={()=>updatePayment(selected.payment_id,'payment_verified')}>✓ Verify payment</button><button className="btn btn-danger" style={{flex:1}} onClick={()=>updatePayment(selected.payment_id,'payment_rejected')}>Reject</button></div></Modal>}
+  </div>;
+}
+
 /* ══ APP SHELL ══ */
 const PAGES = [
   { id:'dashboard', label:'Dashboard', icon:'📊' },
@@ -1347,6 +1381,7 @@ const PAGES = [
   { id:'dispatch',  label:'Driver Match', icon:'🤖' },
   { id:'tracking',  label:'Live Tracking', icon:'📍' },
   { id:'messages',  label:'Messages', icon:'💬', badge: '2' },
+  { id:'payments',  label:'MoMo Payments', icon:'💳', badge: 'Pilot' },
   { id:'ussd',      label:'USSD / SMS', icon:'📟' },
 ];
 
@@ -1590,7 +1625,7 @@ function App() {
   function handleLogout() { clearAuth(); setCurrentUser(MOCK.user); }
 
   const pageTitles = { dashboard:'Dashboard', market:'Marketplace', orders:'My Orders',
-    dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', ussd:'USSD Mode' };
+    dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', payments:'MTN MoMo Payments', ussd:'USSD Mode' };
 
   return <>
     {toast && <Toast message={toast} onDone={()=>setToast(null)} />}
@@ -1652,6 +1687,7 @@ function App() {
           {page==='dispatch'  && <Dispatch onNavigate={navigate} />}
           {page==='tracking'  && <Tracking />}
           {page==='messages'  && <Messages />}
+          {page==='payments'  && <Payments onNavigate={navigate} />}
           {page==='ussd'      && <USSD />}
         </div>
       </div>
