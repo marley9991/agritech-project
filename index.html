@@ -1402,18 +1402,49 @@ function OperationsDashboard() {
   </div>;
 }
 
+function FarmerDashboard({ onNavigate }) {
+  return <div className="page">
+    <div className="flex-between mb-24"><div><h1 style={{fontSize:22,fontWeight:800}}>Good morning, Ama 🌱</h1><p className="text-muted">Your farm is growing. Here is today’s marketplace activity.</p></div><button className="btn btn-primary" onClick={()=>onNavigate('inventory')}>+ Add produce</button></div>
+    <FarmerOnboardingStatus status="in_review" requestNotes={[]}/>
+    <div className="stats-grid mt-16">{[{label:'Active listings',value:'4',change:'+1 this week',icon:'🥬',bg:'var(--green-bg)'},{label:'Pending orders',value:'8',change:'3 need action',icon:'📦',bg:'var(--yellow-bg)'},{label:'This month',value:'GHS 2,480',change:'+18% vs last month',icon:'💰',bg:'var(--blue-bg)'},{label:'Avg. rating',value:'4.8',change:'24 reviews',icon:'★',bg:'var(--green-bg)'}].map(s=><div className="stat-card" key={s.label}><div className="flex-between"><span className="stat-label">{s.label}</span><span className="stat-accent" style={{background:s.bg}}>{s.icon}</span></div><div className="stat-value">{s.value}</div><div className="stat-change up">{s.change}</div></div>)}</div>
+    <div className="grid-2 mb-24"><div className="card"><div className="flex-between mb-16"><div><div className="section-title">My produce</div><div className="section-sub">Manage availability and pricing</div></div><button className="btn btn-secondary btn-sm" onClick={()=>onNavigate('inventory')}>View all</button></div>{[['🍅','Roma Tomatoes','10 bags','GHS 85 / bag','Active'],['🌶️','Scotch Bonnet Peppers','5 crates','GHS 60 / crate','Active'],['🥬','Kontomire Leaves','2 baskets','GHS 25 / basket','Low stock']].map(p=><div className="row" key={p[1]}><span style={{fontSize:24}}>{p[0]}</span><span style={{flex:1,marginLeft:10}}><strong>{p[1]}</strong><br/><span className="text-muted">{p[2]} · {p[3]}</span></span><Badge type={p[4]==='Low stock'?'yellow':'green'}>{p[4]}</Badge></div>)}</div><div className="card"><div className="flex-between mb-16"><div><div className="section-title">Recent orders</div><div className="section-sub">Orders waiting for your action</div></div><button className="btn btn-secondary btn-sm" onClick={()=>onNavigate('orders')}>View orders</button></div>{[['#1042','Roma Tomatoes','3 bags','GHS 255','New order'],['#1039','Garden Eggs','2 bags','GHS 90','Ready for pickup'],['#1036','Kontomire Leaves','5 baskets','GHS 125','Delivered']].map(o=><div className="row" key={o[0]}><span style={{flex:1}}><strong>{o[0]} · {o[1]}</strong><br/><span className="text-muted">{o[2]} · {o[3]}</span></span><Badge type={o[4]==='New order'?'yellow':o[4]==='Delivered'?'green':'blue'}>{o[4]}</Badge></div>)}</div></div>
+    <div className="card"><div className="flex-between mb-16"><div><div className="section-title">Payout overview</div><div className="section-sub">Manual pilot payout review</div></div><button className="btn btn-secondary btn-sm" onClick={()=>onNavigate('earnings')}>Open earnings</button></div><div className="grid-3"><div><div className="stat-label">Available after delivery</div><div className="stat-value" style={{fontSize:22}}>GHS 450</div></div><div><div className="stat-label">Pending balance</div><div className="stat-value" style={{fontSize:22}}>GHS 780</div></div><div><div className="stat-label">Payout method</div><div style={{fontWeight:700,marginTop:8}}>MTN MoMo · •••• 0024</div><Badge type="yellow">Pending review</Badge></div></div></div>
+  </div>;
+}
+
+function DriverDashboard({ onNavigate }) {
+  const [available,setAvailable] = useState(true);
+  return <div className="page"><div className="flex-between mb-24"><div><h1 style={{fontSize:22,fontWeight:800}}>Good morning, Yaw 🚛</h1><p className="text-muted">Keep produce moving before it loses freshness.</p></div><button className={`btn ${available?'btn-primary':'btn-secondary'}`} onClick={()=>setAvailable(v=>!v)}>{available?'● Available for jobs':'○ Go online'}</button></div><div className="stats-grid">{[{label:'Today’s earnings',value:'GHS 185',change:'+GHS 60 vs yesterday',icon:'💰',bg:'var(--green-bg)'},{label:'Completed trips',value:'6',change:'This week: 22',icon:'🚚',bg:'var(--blue-bg)'},{label:'Distance today',value:'84 km',change:'3 deliveries',icon:'📍',bg:'var(--yellow-bg)'},{label:'Driver rating',value:'4.9',change:'38 reviews',icon:'★',bg:'var(--green-bg)'}].map(s=><div className="stat-card" key={s.label}><div className="flex-between"><span className="stat-label">{s.label}</span><span className="stat-accent" style={{background:s.bg}}>{s.icon}</span></div><div className="stat-value">{s.value}</div><div className="stat-change up">{s.change}</div></div>)}</div><div className="card mb-24"><div className="flex-between mb-16"><div><div className="section-title">Available delivery jobs</div><div className="section-sub">Matched by distance, vehicle capacity, and spoilage risk</div></div><Badge type="green">{available?'Online':'Offline'}</Badge></div>{[['⚡','Ho → Accra','Roma Tomatoes · 3 bags','GHS 95','Urgent · 73% shelf life used'],['🌶️','Ho → Tema','Peppers · 5 crates','GHS 120','Pickup in 42 min'],['🥬','Koforidua → Accra','Leafy greens · 8 baskets','GHS 145','Cold-chain preferred']].map(j=><div key={j[1]} style={{display:'flex',alignItems:'center',gap:12,padding:'15px 0',borderTop:'1px solid var(--border)',flexWrap:'wrap'}}><span style={{fontSize:25}}>{j[0]}</span><div style={{flex:1,minWidth:180}}><strong>{j[1]}</strong><div className="text-muted">{j[2]}</div><div style={{fontSize:11,color:j[0]==='⚡'?'var(--yellow)':'var(--muted)',marginTop:4}}>{j[4]}</div></div><strong style={{color:'var(--yellow)'}}>{j[3]}</strong><button className="btn btn-primary btn-sm" onClick={()=>onNavigate('dispatch')} disabled={!available}>View job</button></div>)}</div><div className="grid-2"><div className="card"><div className="section-title mb-12">Current trip</div><div className="order-hero" style={{padding:16,borderRadius:'var(--radius-md)'}}><strong>Yaw → Accra</strong><div className="text-muted" style={{margin:'6px 0 12px'}}>Roma Tomatoes · Order #1042</div><Badge type="blue">Pickup confirmed</Badge><button className="btn btn-secondary btn-sm" style={{width:'100%',marginTop:14}} onClick={()=>onNavigate('tracking')}>Open route</button></div></div><div className="card"><div className="section-title mb-12">Vehicle profile</div><div className="row"><span className="row-label">Vehicle</span><strong>Pickup Truck</strong></div><div className="row"><span className="row-label">Capacity</span><strong>500 kg</strong></div><div className="row"><span className="row-label">Cold-chain</span><Badge type="green">Available</Badge></div></div></div></div>;
+}
+
+function RoleWorkspace({ type, onNavigate }) {
+  const isInventory = type === 'inventory';
+  const isEarnings = type === 'earnings';
+  return <div className="page"><div className="flex-between mb-24"><div><h1 style={{fontSize:20,fontWeight:800}}>{isInventory?'Produce inventory':isEarnings?'Earnings & payouts':'Delivery jobs'}</h1><p className="text-muted">{isInventory?'Manage listings, quantities, and prices from one place.':isEarnings?'Track completed orders and payout review status.':'Review delivery opportunities matched to your vehicle.'}</p></div><Badge type={isInventory?'green':isEarnings?'yellow':'blue'}>{isInventory?'Farmer':isEarnings?'Farmer':'Driver'}</Badge></div><div className="card" style={{padding:0,overflow:'hidden'}}>{(isInventory?[['🍅','Roma Tomatoes','10 bags','GHS 85 / bag','Active'],['🌶️','Scotch Bonnet Peppers','5 crates','GHS 60 / crate','Active'],['🥬','Kontomire Leaves','2 baskets','GHS 25 / basket','Low stock']]:isEarnings?[['#1038','Roma Tomatoes','GHS 255','Delivered','GHS 229.50 payout'],['#1034','Garden Eggs','GHS 180','In transit','Pending release'],['#1028','Kontomire Leaves','GHS 125','Completed','GHS 112.50 paid']]:[['Ho → Accra','Roma Tomatoes · 3 bags','GHS 95','Urgent pickup'],['Ho → Tema','Peppers · 5 crates','GHS 120','Pickup in 42 min'],['Koforidua → Accra','Leafy greens · 8 baskets','GHS 145','Cold-chain preferred']]).map(row=><div key={row[0]} style={{display:'flex',alignItems:'center',gap:14,padding:'18px 20px',borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}><div style={{fontSize:24}}>{isInventory?row[0]:isEarnings?'💰':'🚛'}</div><div style={{flex:1,minWidth:180}}><strong>{row[0]} · {row[1]}</strong><div className="text-muted">{row[2]}</div></div><div style={{fontWeight:800,color:'var(--yellow)'}}>{row[3]}</div><Badge type={isInventory&&row[4]==='Low stock'?'yellow':isEarnings&&row[3]==='Completed'?'green':'blue'}>{isInventory?row[4]:isEarnings?row[3]:row[4]}</Badge>{isInventory&&<button className="btn btn-secondary btn-sm">Edit</button>}{!isInventory&&<button className="btn btn-primary btn-sm" onClick={()=>onNavigate(isEarnings?'orders':'dispatch')}>{isEarnings?'View order':'View job'}</button>}</div>)}</div>{isEarnings&&<div className="card mt-16"><div className="section-title mb-12">Payout method</div><div className="row"><span className="row-label">MTN MoMo · •••• 0024</span><Badge type="yellow">Pending verification</Badge></div><button className="btn btn-secondary btn-sm" style={{marginTop:12}}>Request payout review</button></div>}</div>;
+}
+
 /* ══ APP SHELL ══ */
 const PAGES = [
   { id:'dashboard', label:'Dashboard', icon:'📊' },
-  { id:'market',    label:'Marketplace', icon:'🛒' },
-  { id:'orders',    label:'My Orders', icon:'📦', badge: '3' },
-  { id:'dispatch',  label:'Driver Match', icon:'🤖' },
-  { id:'tracking',  label:'Live Tracking', icon:'📍' },
+  { id:'market',    label:'Marketplace', icon:'🛒', roles:['buyer'] },
+  { id:'orders',    label:'My Orders', icon:'📦', badge: '3', roles:['buyer','farmer'] },
+  { id:'dispatch',  label:'Driver Match', icon:'🤖', roles:['driver','operations','admin'] },
+  { id:'tracking',  label:'Live Tracking', icon:'📍', roles:['buyer','farmer','driver','operations','admin'] },
   { id:'messages',  label:'Messages', icon:'💬', badge: '2' },
-  { id:'payments',  label:'MoMo Payments', icon:'💳', badge: 'Pilot' },
+  { id:'payments',  label:'MoMo Payments', icon:'💳', badge: 'Pilot', roles:['operations','admin'] },
   { id:'operations',label:'Farmer Review', icon:'✅', badge: 'Ops', roles:['operations','admin'] },
+  { id:'inventory', label:'My Produce', icon:'🌾', roles:['farmer'] },
+  { id:'earnings',  label:'Earnings', icon:'💰', roles:['farmer','driver'] },
+  { id:'jobs',      label:'Delivery Jobs', icon:'🚚', roles:['driver'] },
   { id:'ussd',      label:'USSD / SMS', icon:'📟' },
 ];
+
+const DEMO_USERS = {
+  buyer: { user_id:2, role:'buyer', full_name:'Kofi Mensah', business_name:"Kofi's Kitchen" },
+  farmer: { user_id:11, role:'farmer', full_name:'Ama Asante', farm_name:"Ama's Fresh Farm" },
+  driver: { user_id:21, role:'driver', full_name:'Yaw Boateng', vehicle_type:'pickup_truck' },
+  operations: { user_id:1, role:'operations', full_name:'Evelyn Mensah' },
+};
 
 // ── Login / Register Page ────────────────────────────────────────────────────
 function AuthPage({ onLogin }) {
@@ -1651,11 +1682,12 @@ function App() {
   const [currentUser, setCurrentUser] = useState(getUser() || MOCK.user);
 
   function navigate(p) { setPage(p); setSidebarOpen(false); }
+  function switchDemoRole(role) { setCurrentUser(DEMO_USERS[role]); setPage('dashboard'); setSidebarOpen(false); }
   function handleLogin(user) { setCurrentUser(user); }
   function handleLogout() { clearAuth(); setCurrentUser(MOCK.user); }
 
   const pageTitles = { dashboard:'Dashboard', market:'Marketplace', orders:'My Orders',
-    dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', payments:'MTN MoMo Payments', operations:'Farmer Review', ussd:'USSD Mode' };
+    dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', payments:'MTN MoMo Payments', operations:'Farmer Review', inventory:'My Produce', earnings:'Earnings', jobs:'Delivery Jobs', ussd:'USSD Mode' };
   const visiblePage = p => !p.roles || p.roles.includes(currentUser.role);
 
   return <>
@@ -1708,11 +1740,17 @@ function App() {
             <input placeholder="Search..." />
           </div>
           <div className="topbar-icon"><span>🔔</span><div className="notif-dot"></div></div>
+          <select aria-label="Demo role switcher" value={currentUser.role} onChange={e=>switchDemoRole(e.target.value)} style={{background:'var(--surface-2)',border:'1px solid var(--border)',borderRadius:10,color:'var(--white)',padding:'8px 10px',fontSize:11,fontWeight:700}}>
+            <option value="buyer">Demo: Buyer</option><option value="farmer">Demo: Farmer</option><option value="driver">Demo: Driver</option><option value="operations">Demo: Operations</option>
+          </select>
           <Avatar name={currentUser.full_name} size={36} />
         </div>
 
         <div style={{flex:1,overflowY:'auto'}}>
-          {page==='dashboard' && <Dashboard onNavigate={navigate} />}
+          {page==='dashboard' && currentUser.role==='buyer' && <Dashboard onNavigate={navigate} />}
+          {page==='dashboard' && currentUser.role==='farmer' && <FarmerDashboard onNavigate={navigate} />}
+          {page==='dashboard' && currentUser.role==='driver' && <DriverDashboard onNavigate={navigate} />}
+          {page==='dashboard' && (currentUser.role==='operations'||currentUser.role==='admin') && <OperationsDashboard />}
           {page==='market'    && <Marketplace onNavigate={navigate} />}
           {page==='orders'    && <Orders onNavigate={navigate} />}
           {page==='dispatch'  && <Dispatch onNavigate={navigate} />}
@@ -1720,6 +1758,9 @@ function App() {
           {page==='messages'  && <Messages />}
           {page==='payments'  && <Payments onNavigate={navigate} />}
           {page==='operations' && (currentUser.role==='operations'||currentUser.role==='admin') && <OperationsDashboard />}
+          {page==='inventory'  && currentUser.role==='farmer' && <RoleWorkspace type="inventory" onNavigate={navigate} />}
+          {page==='earnings'   && (currentUser.role==='farmer'||currentUser.role==='driver') && <RoleWorkspace type="earnings" onNavigate={navigate} />}
+          {page==='jobs'       && currentUser.role==='driver' && <RoleWorkspace type="jobs" onNavigate={navigate} />}
           {page==='ussd'      && <USSD />}
         </div>
       </div>
