@@ -202,6 +202,141 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════
+// FARMER ONBOARDING & OPERATIONS REVIEW
+// ════════════════════════════════════════════════════════════
+
+const FARMER_REVIEW_ACTIONS = new Set(['approve', 'request_changes', 'reject']);
+const normaliseReviewAction = action => String(action || '').trim().toLowerCase();
+const reviewStatusFor = action => action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'in_review';
+
+app.get('/api/farmer/onboarding', requireAuth, requireRole('farmer'), async (req, res) => {
+  try {
+    const { rows: [application] } = await db.query(
+      `SELECT u.user_id, u.full_name, u.phone_number, u.is_verified, u.is_active,
+              fp.farm_name, fp.farm_size_acres, fp.primary_crops, fp.years_farming,
+              COALESCE(fp.onboarding_status, 'not_started') AS onboarding_status,
+              fp.onboarding_submitted_at, fp.onboarding_reviewed_at, fp.rejection_reason
+       FROM users u JOIN farmer_profiles fp ON fp.user_id = u.user_id
+       WHERE u.user_id = $1`, [req.user.user_id]
+    );
+    if (!application) return res.status(404).json({ error: 'Farmer profile not found' });
+    res.json({ application });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/farmer/onboarding/submit', requireAuth, requireRole('farmer'), async (req, res) => {
+  try {
+    const { farm_name, farm_size_acres, primary_crops, years_farming } = req.body;
+    if (!farm_name || !Array.isArray(primary_crops) || primary_crops.length === 0)
+      return res.status(400).json({ error: 'farm_name and at least one primary crop are required' });
+    const { rows: [profile] } = await db.query(
+      `UPDATE farmer_profiles
+       SET farm_name = $1, farm_size_acres = $2, primary_crops = $3,
+           years_farming = $4, onboarding_status = 'in_review',
+           onboarding_submitted_at = now(), rejection_reason = NULL
+       WHERE user_id = $5
+       RETURNING user_id, farm_name, farm_size_acres, primary_crops, years_farming,
+                 onboarding_status, onboarding_submitted_at`,
+      [farm_name, farm_size_acres || null, primary_crops, years_farming || null, req.user.user_id]
+    );
+    if (!profile) return res.status(404).json({ error: 'Farmer profile not found' });
+    res.status(202).json({ success: true, application: profile });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.get('/api/operations/farmers', requireAuth, requireRole('operations', 'admin'), async (req, res) => {
+  try {
+    const { status = 'all', region_id, search, limit = 50, offset = 0 } = req.query;
+    const conditions = [`u.role = 'farmer'`]; const params = []; let i = 1;
+    if (status !== 'all') { conditions.push(`COALESCE(fp.onboarding_status, 'not_started') = $${i++}`); params.push(status); }
+    if (region_id) { conditions.push(`u.region_id = $${i++}`); params.push(region_id); }
+    if (search) { conditions.push(`(u.full_name ILIKE $${i} OR fp.farm_name ILIKE $${i} OR u.phone_number ILIKE $${i})`); params.push(`%${search}%`); i++; }
+    const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+    const safeOffset = Math.max(parseInt(offset, 10) || 0, 0); params.push(safeLimit, safeOffset);
+    const { rows } = await db.query(
+      `SELECT u.user_id, u.full_name, u.phone_number, u.region_id, u.is_verified, u.is_active,
+              u.created_at, r.region_name, fp.farm_name, fp.primary_crops,
+              fp.farm_size_acres, fp.years_farming,
+              COALESCE(fp.onboarding_status, 'not_started') AS onboarding_status,
+              fp.onboarding_submitted_at, fp.onboarding_reviewed_at, fp.rejection_reason
+       FROM users u JOIN farmer_profiles fp ON fp.user_id = u.user_id
+       LEFT JOIN regions r ON r.region_id = u.region_id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY CASE COALESCE(fp.onboarding_status, 'not_started') WHEN 'in_review' THEN 0 WHEN 'not_started' THEN 1 ELSE 2 END,
+                fp.onboarding_submitted_at NULLS LAST, u.created_at DESC
+       LIMIT $${i} OFFSET $${i + 1}`, params
+    );
+    res.json({ farmers: rows, count: rows.length, limit: safeLimit, offset: safeOffset });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/operations/farmers/:farmerId', requireAuth, requireRole('operations', 'admin'), async (req, res) => {
+  try {
+    const { rows: [farmer] } = await db.query(
+      `SELECT u.user_id, u.full_name, u.phone_number, u.email, u.region_id,
+              u.is_verified, u.is_active, u.created_at, r.region_name,
+              fp.farm_name, fp.farm_size_acres, fp.primary_crops, fp.years_farming,
+              COALESCE(fp.onboarding_status, 'not_started') AS onboarding_status,
+              fp.onboarding_submitted_at, fp.onboarding_reviewed_at, fp.reviewed_by,
+              fp.rejection_reason
+       FROM users u JOIN farmer_profiles fp ON fp.user_id = u.user_id
+       LEFT JOIN regions r ON r.region_id = u.region_id
+       WHERE u.user_id = $1 AND u.role = 'farmer'`, [req.params.farmerId]
+    );
+    if (!farmer) return res.status(404).json({ error: 'Farmer application not found' });
+    const { rows: audit } = await db.query(
+      `SELECT audit_id, actor_id, action, details, created_at FROM role_audit_log
+       WHERE target_user_id = $1 ORDER BY created_at DESC LIMIT 25`, [req.params.farmerId]
+    ).catch(() => ({ rows: [] }));
+    res.json({ farmer, audit });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/operations/farmers/:farmerId/review', requireAuth, requireRole('operations', 'admin'), async (req, res) => {
+  const action = normaliseReviewAction(req.body.action);
+  const reason = String(req.body.reason || '').trim();
+  const notes = Array.isArray(req.body.notes) ? req.body.notes.filter(Boolean).slice(0, 20) : [];
+  if (!FARMER_REVIEW_ACTIONS.has(action)) return res.status(400).json({ error: 'action must be approve, request_changes, or reject' });
+  if ((action === 'reject' || action === 'request_changes') && !reason && notes.length === 0)
+    return res.status(400).json({ error: 'A reason or notes are required for this action' });
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [farmer] } = await client.query(
+      `SELECT u.user_id, u.full_name, u.role, u.is_verified, u.is_active,
+              fp.farm_name, fp.primary_crops,
+              COALESCE(fp.onboarding_status, 'not_started') AS onboarding_status
+       FROM users u JOIN farmer_profiles fp ON fp.user_id = u.user_id
+       WHERE u.user_id = $1 AND u.role = 'farmer' FOR UPDATE`, [req.params.farmerId]
+    );
+    if (!farmer) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Farmer application not found' }); }
+    if (action === 'approve' && (!farmer.farm_name || !farmer.primary_crops || farmer.primary_crops.length === 0)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Farmer profile is incomplete; request changes before approval' });
+    }
+    const nextStatus = reviewStatusFor(action);
+    await client.query(
+      `UPDATE farmer_profiles SET onboarding_status = $1, onboarding_reviewed_at = now(),
+       reviewed_by = $2, rejection_reason = $3 WHERE user_id = $4`,
+      [nextStatus, req.user.user_id, action === 'approve' ? null : (reason || notes.join('; ')), farmer.user_id]
+    );
+    await client.query(`UPDATE users SET is_verified = $1, is_active = true, updated_at = now() WHERE user_id = $2`, [action === 'approve', farmer.user_id]);
+    await client.query(
+      `INSERT INTO role_audit_log (actor_id, target_user_id, action, details) VALUES ($1,$2,$3,$4::jsonb)`,
+      [req.user.user_id, farmer.user_id, `farmer_${action}`, JSON.stringify({ reason, notes, previous_status: farmer.onboarding_status, new_status: nextStatus })]
+    );
+    await client.query(
+      `INSERT INTO notifications (user_id, channel, title, body) VALUES ($1, 'app_push', $2, $3)`,
+      [farmer.user_id, action === 'approve' ? 'Farmer application approved' : action === 'reject' ? 'Farmer application rejected' : 'Changes requested on your application', action === 'approve' ? 'Your farmer account is approved. You can now publish produce listings.' : (reason || notes.join('; '))]
+    );
+    await client.query('COMMIT');
+    res.json({ success: true, farmer_id: farmer.user_id, action, status: nextStatus });
+  } catch (err) { await client.query('ROLLBACK').catch(() => {}); res.status(500).json({ error: err.message }); }
+  finally { client.release(); }
+});
+
+// ════════════════════════════════════════════════════════════
 // PRODUCTS
 // ════════════════════════════════════════════════════════════
 
@@ -247,6 +382,11 @@ app.get('/api/products/:productId', async (req, res) => {
 // POST /api/products — farmers only
 app.post('/api/products', requireAuth, requireRole('farmer'), async (req, res) => {
   try {
+    const { rows: [farmer] } = await db.query(
+      `SELECT onboarding_status FROM farmer_profiles WHERE user_id = $1`, [req.user.user_id]
+    );
+    if (!farmer || farmer.onboarding_status !== 'approved')
+      return res.status(403).json({ error: 'Farmer approval is required before publishing produce' });
     const { region_id, crop_category, crop_name, description,
             quantity_available, unit, price_per_unit, latitude, longitude, harvested_at } = req.body;
     const { rows: [product] } = await db.query(
@@ -599,6 +739,20 @@ async function initDB() {
       }
     }
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(64)`);
+    await db.query(`ALTER TABLE farmer_profiles ADD COLUMN IF NOT EXISTS onboarding_status VARCHAR(30) NOT NULL DEFAULT 'not_started'`);
+    await db.query(`ALTER TABLE farmer_profiles ADD COLUMN IF NOT EXISTS onboarding_submitted_at TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE farmer_profiles ADD COLUMN IF NOT EXISTS onboarding_reviewed_at TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE farmer_profiles ADD COLUMN IF NOT EXISTS reviewed_by INTEGER REFERENCES users(user_id)`);
+    await db.query(`ALTER TABLE farmer_profiles ADD COLUMN IF NOT EXISTS rejection_reason TEXT`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_farmer_profiles_onboarding ON farmer_profiles(onboarding_status)`);
+    await db.query(`CREATE TABLE IF NOT EXISTS role_audit_log (
+      audit_id BIGSERIAL PRIMARY KEY,
+      actor_id INTEGER REFERENCES users(user_id),
+      target_user_id INTEGER REFERENCES users(user_id),
+      action VARCHAR(80) NOT NULL,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`);
     await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS platform_fee NUMERIC(10,2) NOT NULL DEFAULT 0`);
     await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS farmer_payout NUMERIC(12,2) NOT NULL DEFAULT 0`);
     await db.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS payment_provider VARCHAR(30) NOT NULL DEFAULT 'momo'`);

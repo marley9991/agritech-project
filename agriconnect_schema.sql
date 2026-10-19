@@ -8,7 +8,7 @@
 -- ENUM TYPES
 -- ---------------------------------------------------------------------
 
-CREATE TYPE user_role AS ENUM ('farmer', 'buyer', 'driver');
+CREATE TYPE user_role AS ENUM ('farmer', 'buyer', 'driver', 'operations', 'admin');
 
 CREATE TYPE language_pref AS ENUM ('en', 'ga', 'tw'); -- English, Ga, Twi
 
@@ -90,7 +90,23 @@ CREATE TABLE farmer_profiles (
     farm_name       VARCHAR(120),
     farm_size_acres NUMERIC(6,2),
     primary_crops   crop_category[],                -- array of crops typically grown
-    years_farming   INTEGER
+    years_farming   INTEGER,
+    onboarding_status VARCHAR(30) NOT NULL DEFAULT 'not_started',
+    onboarding_submitted_at TIMESTAMPTZ,
+    onboarding_reviewed_at TIMESTAMPTZ,
+    reviewed_by     INTEGER REFERENCES users(user_id),
+    rejection_reason TEXT
+);
+
+CREATE INDEX idx_farmer_profiles_onboarding ON farmer_profiles(onboarding_status);
+
+CREATE TABLE role_audit_log (
+    audit_id        BIGSERIAL PRIMARY KEY,
+    actor_id        INTEGER REFERENCES users(user_id),
+    target_user_id  INTEGER REFERENCES users(user_id),
+    action          VARCHAR(80) NOT NULL,
+    details         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Role-specific extension: Buyer profile
