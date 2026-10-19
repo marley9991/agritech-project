@@ -570,6 +570,7 @@ tr:hover td { background: #f5f8f2; }
 @media (max-width: 640px) {
   .topbar-search { display: none; }
   .stats-grid, .market-grid { grid-template-columns: 1fr; }
+  .operations-split { grid-template-columns: 1fr !important; }
   .page h1 { font-size: 20px !important; }
   .auth-right-panel { display: none !important; }
 }
@@ -1373,6 +1374,34 @@ function Payments({ onNavigate }) {
   </div>;
 }
 
+/* ── Farmer-facing onboarding status ── */
+function FarmerOnboardingStatus({ status='in_review', requestNotes=[] }) {
+  const copy = {
+    not_started:['Complete your farmer profile','Add your farm details and payout method to submit your application.','Continue onboarding'],
+    in_review:['Application under review','Operations is checking your farm details. You can save listings as drafts while you wait.','View application'],
+    approved:['You are approved to sell','Your active produce listings can now be visible to buyers.','Add produce'],
+    rejected:['Changes are needed','Update the items below and submit your application again.','Review changes']
+  }[status] || [];
+  return <div className="card" style={{borderColor:status==='approved'?'rgba(47,107,79,.25)':status==='rejected'?'rgba(192,68,57,.25)':'rgba(196,119,45,.25)'}}><div style={{display:'flex',gap:12,alignItems:'flex-start'}}><div style={{width:38,height:38,borderRadius:'50%',background:status==='approved'?'var(--green-bg)':status==='rejected'?'var(--red-bg)':'var(--yellow-bg)',display:'grid',placeItems:'center',fontSize:18}}>{status==='approved'?'✓':status==='rejected'?'!':'⌛'}</div><div style={{flex:1}}><div className="section-title">{copy[0]}</div><p className="text-muted" style={{lineHeight:1.6,margin:'4px 0 12px'}}>{copy[1]}</p>{requestNotes.length>0&&<div style={{padding:10,background:'var(--red-bg)',borderRadius:'var(--radius-md)',fontSize:12,color:'var(--red)',marginBottom:12}}><strong>Requested changes:</strong><ul style={{margin:'6px 0 0 18px'}}>{requestNotes.map(n=><li key={n}>{n}</li>)}</ul></div>}<button className={`btn ${status==='approved'?'btn-primary':'btn-secondary'} btn-sm`}>{copy[2]} →</button></div><Badge type={status==='approved'?'green':status==='rejected'?'red':'yellow'}>{status.replace('_',' ')}</Badge></div></div>;
+}
+
+/* ── Operations: farmer review split view ── */
+function OperationsDashboard() {
+  const seed = [{id:1,name:'Ama Asante',farm:'Ama’s Fresh Farm',region:'Volta Region',crops:'Tomatoes, peppers',submitted:'2 hours ago',status:'in_review',docs:'complete',payout:'pending',phone:'024 555 0182',notes:[]},{id:2,name:'Kofi Mensah',farm:'Kofi Green Fields',region:'Greater Accra',crops:'Okra, leafy greens',submitted:'Yesterday',status:'in_review',docs:'missing',payout:'pending',phone:'020 444 9011',notes:['Upload farm proof','Confirm payout account name']},{id:3,name:'Abena Owusu',farm:'Abena Vegetable Co.',region:'Central Region',crops:'Garden eggs',submitted:'3 days ago',status:'in_review',docs:'complete',payout:'verified',phone:'055 222 7834',notes:[]}];
+  const [farmers,setFarmers] = useState(seed), [selectedId,setSelectedId] = useState(1), [filter,setFilter] = useState('all'), [query,setQuery] = useState(''), [dialog,setDialog] = useState(null), [toast,setToast] = useState(null);
+  const selected = farmers.find(f=>f.id===selectedId) || farmers[0];
+  const filtered = farmers.filter(f=>(filter==='all'||f.status===filter)&&(f.name+' '+f.farm+' '+f.region).toLowerCase().includes(query.toLowerCase()));
+  function update(status, notes=[]) { setFarmers(fs=>fs.map(f=>f.id===selected.id?{...f,status,notes}:f)); setDialog(null); setToast(status==='approved'?'Farmer approved — listings can be published':status==='rejected'?'Farmer application rejected':'Changes requested from farmer'); }
+  return <div className="page">
+    {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}<div className="flex-between mb-24"><div><h1 style={{fontSize:20,fontWeight:800}}>Farmer applications</h1><p className="text-muted">Review profiles, documents, and payout readiness in one workspace.</p></div><Badge type="green">Operations</Badge></div>
+    <div className="stats-grid">{[['New applications',farmers.length,'⌛'],['In review',farmers.filter(f=>f.status==='in_review').length,'◷'],['Documents complete',farmers.filter(f=>f.docs==='complete').length,'✓'],['Payouts pending',farmers.filter(f=>f.payout==='pending').length,'₵']].map(([l,v,i])=><div className="stat-card" key={l}><div className="stat-accent" style={{background:'var(--green-bg)'}}>{i}</div><div className="stat-label">{l}</div><div className="stat-value">{v}</div></div>)}</div>
+    <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}><div className="topbar-search" style={{flex:1,minWidth:220}}><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search farmer, farm, or region..."/></div>{['all','in_review','approved','rejected'].map(f=><button key={f} className={`tab-pill ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>{f==='all'?'All':f.replace('_',' ')}</button>)}</div>
+    <div style={{display:'grid',gridTemplateColumns:'minmax(280px, .82fr) minmax(420px, 1.5fr)',gap:16,alignItems:'start'}} className="operations-split"><div className="card" style={{padding:0,overflow:'hidden'}}><div style={{padding:'16px 18px',borderBottom:'1px solid var(--border)'}}><div className="section-title">Review queue</div><div className="text-muted">{filtered.length} application{filtered.length===1?'':'s'}</div></div>{filtered.map(f=><button key={f.id} onClick={()=>setSelectedId(f.id)} style={{display:'block',width:'100%',textAlign:'left',padding:'16px 18px',background:selected.id===f.id?'var(--green-bg)':'transparent',border:'none',borderBottom:'1px solid var(--border)',cursor:'pointer',color:'var(--white)'}}><div style={{display:'flex',justifyContent:'space-between',gap:8}}><strong>{f.name}</strong><span style={{fontSize:11,color:f.docs==='complete'?'var(--green)':'var(--yellow)'}}>{f.docs==='complete'?'Docs complete':'Needs info'}</span></div><div className="text-muted">{f.farm} · {f.region}</div><div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>{f.crops} · {f.submitted}</div></button>)}</div>
+      <div className="card"><div className="flex-between"><div><div className="section-title">{selected.name}</div><div className="text-muted">{selected.farm} · {selected.region}</div></div><StatusBadge status={selected.status}/></div><div className="divider"/><div className="section-title mb-8">Profile</div><div className="grid-2" style={{gap:8}}>{[['Phone',selected.phone],['Primary crops',selected.crops],['Submitted',selected.submitted],['Payout',selected.payout==='verified'?'Verified':'Pending verification']].map(([l,v])=><div key={l} style={{padding:'10px 12px',background:'var(--surface-2)',borderRadius:'var(--radius-md)'}}><div className="stat-label">{l}</div><div style={{fontWeight:700,fontSize:13}}>{v}</div></div>)}</div><div className="divider"/><div className="section-title mb-8">Review checklist</div>{[['Profile and phone are valid',true],['Farm location is in launch area',true],['Primary crops selected',true],['Documents are readable',selected.docs==='complete'],['Payout account is ready',selected.payout==='verified']].map(([l,ok])=><div className="row" key={l}><span style={{color:ok?'var(--green)':'var(--yellow)',fontSize:16}}>{ok?'✓':'○'}</span><span style={{marginLeft:8,flex:1}}>{l}</span><span className="text-muted">{ok?'Complete':'Needs review'}</span></div>)}<div className="divider"/><div className="section-title mb-8">Payout method</div><div style={{padding:12,background:'var(--surface-2)',borderRadius:'var(--radius-md)',display:'flex',justifyContent:'space-between',gap:8}}><span>MTN MoMo · •••• 0182<br/><span className="text-muted">Account name: {selected.name}</span></span><Badge type={selected.payout==='verified'?'green':'yellow'}>{selected.payout}</Badge></div><div className="divider"/><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button className="btn btn-primary" disabled={selected.docs!=='complete'} onClick={()=>update('approved')}>✓ Approve farmer</button><button className="btn btn-secondary" onClick={()=>setDialog('changes')}>Request changes</button><button className="btn btn-danger" onClick={()=>setDialog('reject')}>Reject</button></div></div></div>
+    {dialog&&<Modal title={dialog==='reject'?'Reject farmer application':'Request changes'} sub={dialog==='reject'?'This reason will be recorded and shared with the farmer.':'Select what the farmer must update before approval.'} onClose={()=>setDialog(null)}><div className="form-group">{(dialog==='reject'?['Unable to verify farm','Duplicate account','Outside launch area','Suspicious activity']:['Upload farm proof','Confirm payout account name','Add farm address','Provide clearer document']).map((x,i)=><label key={x} style={{display:'flex',gap:8,alignItems:'center',padding:'10px 0',fontSize:13}}><input type={dialog==='reject'?'radio':'checkbox'} name="review-reason" defaultChecked={i===0}/>{x}</label>)}</div><button className={`btn ${dialog==='reject'?'btn-danger':'btn-primary'}`} style={{width:'100%'}} onClick={()=>update(dialog==='reject'?'rejected':'in_review',dialog==='reject'?['Application did not meet verification requirements']:['Please update the selected items'])}>{dialog==='reject'?'Reject application':'Send change request'}</button></Modal>}
+  </div>;
+}
+
 /* ══ APP SHELL ══ */
 const PAGES = [
   { id:'dashboard', label:'Dashboard', icon:'📊' },
@@ -1382,6 +1411,7 @@ const PAGES = [
   { id:'tracking',  label:'Live Tracking', icon:'📍' },
   { id:'messages',  label:'Messages', icon:'💬', badge: '2' },
   { id:'payments',  label:'MoMo Payments', icon:'💳', badge: 'Pilot' },
+  { id:'operations',label:'Farmer Review', icon:'✅', badge: 'Ops', roles:['operations','admin'] },
   { id:'ussd',      label:'USSD / SMS', icon:'📟' },
 ];
 
@@ -1625,7 +1655,8 @@ function App() {
   function handleLogout() { clearAuth(); setCurrentUser(MOCK.user); }
 
   const pageTitles = { dashboard:'Dashboard', market:'Marketplace', orders:'My Orders',
-    dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', payments:'MTN MoMo Payments', ussd:'USSD Mode' };
+    dispatch:'Driver Matching', tracking:'Live Tracking', messages:'Messages', payments:'MTN MoMo Payments', operations:'Farmer Review', ussd:'USSD Mode' };
+  const visiblePage = p => !p.roles || p.roles.includes(currentUser.role);
 
   return <>
     {toast && <Toast message={toast} onDone={()=>setToast(null)} />}
@@ -1639,21 +1670,21 @@ function App() {
         </div>
         <div className="sidebar-section">
           <div className="sidebar-section-label">Main</div>
-          {PAGES.slice(0,3).map(p=><button key={p.id} className={`nav-item ${page===p.id?'active':''}`} onClick={()=>navigate(p.id)}>
+          {PAGES.slice(0,3).filter(visiblePage).map(p=><button key={p.id} className={`nav-item ${page===p.id?'active':''}`} onClick={()=>navigate(p.id)}>
             <span className="nav-icon">{p.icon}</span>{p.label}
             {p.badge && <span className="nav-badge">{p.badge}</span>}
           </button>)}
         </div>
         <div className="sidebar-section">
           <div className="sidebar-section-label">Logistics</div>
-          {PAGES.slice(3,6).map(p=><button key={p.id} className={`nav-item ${page===p.id?'active':''}`} onClick={()=>navigate(p.id)}>
+          {PAGES.slice(3,6).filter(visiblePage).map(p=><button key={p.id} className={`nav-item ${page===p.id?'active':''}`} onClick={()=>navigate(p.id)}>
             <span className="nav-icon">{p.icon}</span>{p.label}
             {p.badge && <span className="nav-badge">{p.badge}</span>}
           </button>)}
         </div>
         <div className="sidebar-section">
           <div className="sidebar-section-label">Bonus</div>
-          {PAGES.slice(6).map(p=><button key={p.id} className={`nav-item ${page===p.id?'active':''}`} onClick={()=>navigate(p.id)}>
+          {PAGES.slice(6).filter(visiblePage).map(p=><button key={p.id} className={`nav-item ${page===p.id?'active':''}`} onClick={()=>navigate(p.id)}>
             <span className="nav-icon">{p.icon}</span>{p.label}
           </button>)}
         </div>
@@ -1688,6 +1719,7 @@ function App() {
           {page==='tracking'  && <Tracking />}
           {page==='messages'  && <Messages />}
           {page==='payments'  && <Payments onNavigate={navigate} />}
+          {page==='operations' && (currentUser.role==='operations'||currentUser.role==='admin') && <OperationsDashboard />}
           {page==='ussd'      && <USSD />}
         </div>
       </div>
