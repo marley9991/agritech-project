@@ -659,6 +659,38 @@ body { background: #f5f7f2; background-image: radial-gradient(circle at 84% -10%
 @media (max-width: 900px) { .sidebar { width: 228px; } .page { padding: 26px 22px 38px; } .topbar { padding: 0 22px; } }
 @media (max-width: 640px) { .page { padding: 22px 14px 34px; } .topbar { padding: 0 14px; } .topbar select { max-width: 112px; font-size: 10px !important; } .stats-grid { gap: 10px; } }
 
+.checkout-progress { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:-2px 0 22px; }
+.checkout-step { display:flex; align-items:center; gap:7px; color:#a0aca3; font-size:11px; font-weight:700; }
+.checkout-step span { width:25px; height:25px; display:grid; place-items:center; border-radius:50%; background:#edf2eb; border:1px solid var(--line); color:#829087; }
+.checkout-step.active { color:var(--green); }
+.checkout-step.active span { background:#dcebd7; border-color:#afd0b2; color:var(--green); }
+.checkout-product { display:flex; align-items:center; gap:12px; padding:14px; background:#f4f7f1; border:1px solid var(--line); border-radius:14px; margin-bottom:18px; }
+.checkout-product-art { width:48px; height:48px; display:grid; place-items:center; border-radius:12px; background:#e5f0e1; font-size:27px; }
+.checkout-product strong { color:var(--ink); font-size:14px; }
+.checkout-price { color:var(--terracotta); font-weight:800; margin-top:4px; }
+.checkout-totals { padding:12px 0; margin-bottom:18px; border-top:1px solid var(--line); }
+.checkout-totals > div { display:flex; justify-content:space-between; gap:12px; padding:6px 0; font-size:12px; color:#718078; }
+.checkout-totals strong { color:var(--ink); }
+.checkout-totals .checkout-total { margin-top:6px; padding-top:12px; border-top:1px dashed #cbdaca; color:var(--ink); font-weight:700; font-size:14px; }
+.checkout-total strong { color:var(--terracotta); font-size:18px; }
+.momo-instructions { padding:18px; margin-bottom:18px; border-radius:16px; background:linear-gradient(135deg,#eff6e9,#fff6e9); border:1px solid #d6e4d2; }
+.momo-kicker { color:var(--green); text-transform:uppercase; letter-spacing:.12em; font-size:10px; font-weight:800; }
+.momo-amount { color:var(--ink); font-size:30px; font-weight:800; letter-spacing:-.05em; margin:5px 0; }
+.momo-number { color:var(--terracotta); font-size:22px; letter-spacing:.06em; font-weight:800; margin:14px 0 8px; }
+.momo-safety { padding-top:10px; border-top:1px solid #dbe7d7; color:#78867b; font-size:11px; line-height:1.5; }
+.checkout-success { text-align:center; padding:8px 6px 2px; }
+.success-mark { width:56px; height:56px; display:grid; place-items:center; margin:4px auto 14px; border-radius:50%; background:#dcebd7; color:var(--green); font-size:27px; font-weight:800; }
+.checkout-success h3 { color:var(--ink); font-family:var(--display); font-size:20px; margin-bottom:8px; }
+.checkout-success p { font-size:13px; line-height:1.6; }
+.success-detail { display:flex; justify-content:space-between; gap:12px; text-align:left; padding:11px 0; border-bottom:1px solid var(--line); font-size:12px; }
+.success-detail span { color:#7d8b81; }.success-detail strong { color:var(--ink); }
+.tracking-hero { display:flex; justify-content:space-between; align-items:center; gap:18px; padding:20px 22px; background:linear-gradient(120deg,#edf5e9 0%,#fffaf2 100%); border:1px solid #d5e4d3; border-radius:18px; }
+.tracking-hero h1 { margin:4px 0 4px; }
+.eyebrow { color:var(--green); font-size:10px; letter-spacing:.14em; font-weight:800; }
+.tracking-eta { min-width:128px; padding-left:18px; border-left:1px solid #d2e1d1; color:var(--green); }
+.tracking-eta strong { display:block; font-size:20px; letter-spacing:-.04em; }.tracking-eta small { display:block; color:#7b8a80; font-size:10px; margin-top:2px; }
+@media (max-width:560px) { .tracking-hero { align-items:flex-start; flex-direction:column; } .tracking-eta { width:100%; padding:10px 0 0; border-left:0; border-top:1px solid #d2e1d1; } .checkout-step small { display:none; } }
+
 </style>
 </head>
 <body>
@@ -917,6 +949,10 @@ function Marketplace({ onNavigate }) {
   const [qty, setQty] = useState(1);
   const [toast, setToast] = useState(null);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState(1);
+  const [deliveryAddress, setDeliveryAddress] = useState('Liberation Rd, Accra');
+  const [payerPhone, setPayerPhone] = useState('');
+  const [momoReference, setMomoReference] = useState('');
   const [liveProducts, setLiveProducts] = useState(null);
 
   useEffect(() => {
@@ -947,7 +983,7 @@ function Marketplace({ onNavigate }) {
     (!search || p.crop_name.toLowerCase().includes(search.toLowerCase()) || p.farmer_name.toLowerCase().includes(search.toLowerCase()))
   );
 
-  function openDetail(p) { setSelected(p); setQty(1); }
+  function openDetail(p) { setSelected(p); setQty(1); setCheckoutStep(1); setDeliveryAddress('Liberation Rd, Accra'); setPayerPhone(''); setMomoReference(''); }
 
   async function placeOrder() {
     const orderId = 2000 + Math.floor(Math.random() * 8000);
@@ -1051,42 +1087,21 @@ function Marketplace({ onNavigate }) {
       </button>
     </Modal>}
 
-    {selected && showCheckout && <Modal title="Pay with MTN MoMo" sub="Manual payment verification for the pilot" onClose={()=>setShowCheckout(false)}>
-      <div className="card card-sm mb-16">
-        <div className="row"><span className="row-label">{selected.crop_name} × {qty}</span><span className="row-val">GHS {qty*selected.price_per_unit}</span></div>
-        <div className="divider" style={{margin:'8px 0'}}></div>
-        <div className="row"><span className="row-label">Delivery fee</span><span style={{fontSize:12,color:'var(--muted)'}}>Confirmed after driver match</span></div>
-        <div className="divider" style={{margin:'8px 0'}}></div>
-        <div className="row"><span style={{fontWeight:700,color:'var(--white)'}}>Amount to pay</span><span style={{fontSize:18,fontWeight:800,color:'var(--yellow)'}}>GHS {qty*selected.price_per_unit}</span></div>
-      </div>
-      <div style={{padding:'14px',background:'var(--green-bg)',border:'1px solid rgba(47,107,79,0.18)',borderRadius:'var(--radius-md)',marginBottom:16}}>
-        <div style={{fontWeight:800,color:'var(--green)',marginBottom:6}}>1. Send MTN MoMo</div>
-        <div style={{fontSize:13,color:'var(--white)',lineHeight:1.6}}>Send <strong>GHS {qty*selected.price_per_unit}</strong> to the approved AgriConnect number:</div>
-        <div style={{fontSize:21,fontWeight:800,letterSpacing:'.04em',color:'var(--green)',margin:'8px 0'}}>024 XXX XXXX</div>
-        <div style={{fontSize:11,color:'var(--muted)'}}>Do not share your MoMo PIN or OTP. Your order is only confirmed after manual verification.</div>
-      </div>
-      <div className="form-group">
-        <label className="form-label">2. Your MTN MoMo number</label>
-        <input className="form-input" id="manual-payer-phone" type="tel" placeholder="024 000 0000" />
-      </div>
-      <div className="form-group">
-        <label className="form-label">3. MoMo transaction reference</label>
-        <input className="form-input" id="manual-momo-reference" placeholder="e.g. 1234567890" />
-      </div>
-      <div style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:16,padding:'10px 12px',background:'var(--yellow-bg)',borderRadius:'var(--radius-md)',border:'1px solid rgba(196,119,45,0.2)'}}>
-        <span style={{color:'var(--yellow)'}}>!</span>
-        <span style={{fontSize:12,color:'var(--muted)'}}>After you submit, operations will verify the payment before dispatch. Keep your confirmation SMS.</span>
-      </div>
-      <button className="btn btn-primary btn-lg" style={{width:'100%',marginBottom:8}} onClick={()=>{
-        const phone = document.getElementById('manual-payer-phone')?.value.trim();
-        const reference = document.getElementById('manual-momo-reference')?.value.trim();
-        if (!phone || !reference) { alert('Enter your MoMo number and transaction reference.'); return; }
-        const payments = JSON.parse(localStorage.getItem('agri_manual_payments') || '[]');
-        const payment = { payment_id:'MOMO-'+Date.now(), order_id:2000+Math.floor(Math.random()*8000), crop_name:selected.crop_name, emoji:selected.emoji, quantity:qty, amount:qty*selected.price_per_unit, payer_name:'Kofi Mensah', payer_phone:phone, momo_reference:reference, status:'payment_submitted', submitted_at:new Date().toISOString() };
-        localStorage.setItem('agri_manual_payments', JSON.stringify([payment, ...payments]));
-        setShowCheckout(false); setSelected(null); setToast('Payment reference submitted for verification'); setTimeout(()=>onNavigate('payments'), 700);
-      }}>Submit payment for verification →</button>
-      <button className="btn btn-secondary" style={{width:'100%'}} onClick={()=>setShowCheckout(false)}>Cancel</button>
+    {selected && showCheckout && <Modal title={checkoutStep===3 ? 'Order submitted' : 'Complete your order'} sub={checkoutStep===3 ? 'Your produce is reserved while payment is reviewed' : 'Secure manual MTN MoMo checkout'} onClose={()=>setShowCheckout(false)}>
+      <div className="checkout-progress">{[['1','Review'],['2','Payment'],['3','Confirmed']].map(([n,label])=><div className={`checkout-step ${checkoutStep>=Number(n)?'active':''}`} key={n}><span>{n}</span><small>{label}</small></div>)}</div>
+      {checkoutStep===1 && <>
+        <div className="checkout-product"><div className="checkout-product-art">{selected.emoji}</div><div style={{flex:1}}><strong>{selected.crop_name}</strong><div className="text-muted">From {selected.farmer_name} · {selected.region_name}</div><div className="checkout-price">GHS {qty * selected.price_per_unit}</div></div><Badge type="green">{qty} {selected.unit}{qty>1?'s':''}</Badge></div>
+        <div className="form-group"><label className="form-label">Delivery address</label><input className="form-input" value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} placeholder="Street, landmark, city" /></div>
+        <div className="checkout-totals"><div><span>Produce subtotal</span><strong>GHS {qty * selected.price_per_unit}</strong></div><div><span>Delivery fee</span><span className="text-muted">Calculated after matching</span></div><div className="checkout-total"><span>Due now</span><strong>GHS {qty * selected.price_per_unit}</strong></div></div>
+        <button className="btn btn-primary btn-lg" style={{width:'100%'}} disabled={!deliveryAddress.trim()} onClick={()=>setCheckoutStep(2)}>Continue to payment →</button>
+      </>}
+      {checkoutStep===2 && <>
+        <div className="momo-instructions"><div className="momo-kicker">MTN MoMo · manual pilot</div><div className="momo-amount">GHS {qty * selected.price_per_unit}</div><div className="text-muted">Send the exact amount to the approved AgriConnect number.</div><div className="momo-number">024 XXX XXXX</div><div className="momo-safety">Never share your MoMo PIN or OTP. Keep the confirmation SMS until your order is verified.</div></div>
+        <div className="form-group"><label className="form-label">Your MoMo number</label><input className="form-input" type="tel" value={payerPhone} onChange={e=>setPayerPhone(e.target.value)} placeholder="024 000 0000" /></div>
+        <div className="form-group"><label className="form-label">Transaction reference</label><input className="form-input" value={momoReference} onChange={e=>setMomoReference(e.target.value)} placeholder="e.g. 1234567890" /></div>
+        <div style={{display:'flex',gap:8}}><button className="btn btn-secondary" style={{flex:1}} onClick={()=>setCheckoutStep(1)}>← Back</button><button className="btn btn-primary" style={{flex:2}} disabled={!payerPhone.trim() || !momoReference.trim()} onClick={()=>{ const payments=JSON.parse(localStorage.getItem('agri_manual_payments')||'[]'); const orderId=2000+Math.floor(Math.random()*8000); const payment={payment_id:'MOMO-'+Date.now(),order_id:orderId,crop_name:selected.crop_name,emoji:selected.emoji,quantity:qty,amount:qty*selected.price_per_unit,delivery_address:deliveryAddress,payer_name:'Kofi Mensah',payer_phone:payerPhone.trim(),momo_reference:momoReference.trim(),status:'payment_submitted',submitted_at:new Date().toISOString()}; localStorage.setItem('agri_manual_payments',JSON.stringify([payment,...payments])); setCheckoutStep(3); }}>Submit payment reference</button></div>
+      </>}
+      {checkoutStep===3 && <div className="checkout-success"><div className="success-mark">✓</div><h3>Payment submitted for review</h3><p className="text-muted">Your order for {qty} {selected.unit}{qty>1?'s':''} of {selected.crop_name} is reserved. Operations will verify the reference before driver matching.</p><div className="success-detail"><span>Delivery to</span><strong>{deliveryAddress}</strong></div><div className="success-detail"><span>Next step</span><strong>Payment verification</strong></div><button className="btn btn-primary btn-lg" style={{width:'100%',marginTop:16}} onClick={()=>{setShowCheckout(false);setSelected(null);setToast('Order submitted — payment is being verified');onNavigate('orders');}}>Track my order →</button></div>}
     </Modal>}
   </div>;
 }
@@ -1226,13 +1241,7 @@ function Tracking() {
     {label:'In Transit',done:false,current:true},{label:'Delivered',done:false}
   ];
   return <div className="page">
-    <div className="flex-between mb-24">
-      <div>
-        <h1 style={{fontSize:20,fontWeight:800}}>Live Order Tracking</h1>
-        <p className="text-muted">Order #1001 · Roma Tomatoes</p>
-      </div>
-      <Badge type="blue"><span className="pulse"></span>Live</Badge>
-    </div>
+    <div className="tracking-hero mb-24"><div><div className="eyebrow">ORDER #1001 · IN TRANSIT</div><h1 style={{fontSize:20,fontWeight:800}}>Roma Tomatoes are on the way</h1><p className="text-muted">From Ama’s Fresh Farm in Ho to Liberation Rd, Accra</p></div><div className="tracking-eta"><span className="pulse"></span><strong>3h 12min</strong><small>estimated arrival</small></div></div>
 
     <TrackingMap />
 
