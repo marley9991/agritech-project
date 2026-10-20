@@ -700,6 +700,19 @@ function Toast({ message, onDone }) {
   return <div className="toast-msg">{message}</div>;
 }
 
+function FarmerAlerts() {
+  const [notifications, setNotifications] = useState([]);
+  async function refresh() {
+    const data = await apiFetch('/api/notifications?unread=true&limit=5');
+    if (data?.notifications) setNotifications(data.notifications);
+  }
+  useEffect(() => { refresh(); const timer = setInterval(refresh, 15000); return () => clearInterval(timer); }, []);
+  async function markRead(id) { await apiFetch(`/api/notifications/${id}/read`, { method:'PATCH' }); setNotifications(ns => ns.filter(n => n.notification_id !== id)); }
+  return <div style={{display:'grid',gap:8,marginBottom:16}}>
+    {notifications.map(n => <div key={n.notification_id} style={{display:'flex',gap:10,alignItems:'flex-start',padding:'12px 14px',background:'var(--green-bg)',border:'1px solid rgba(47,107,79,.18)',borderRadius:'var(--radius-md)'}}><span style={{fontSize:19}}>🔔</span><div style={{flex:1}}><strong>{n.title}</strong><div className="text-muted" style={{marginTop:3,lineHeight:1.5}}>{n.body}</div></div><button className="btn btn-secondary btn-sm" onClick={()=>markRead(n.notification_id)}>Dismiss</button></div>)}
+  </div>;
+}
+
 function Modal({ title, sub, onClose, children }) {
   return <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
     <div className="modal-box">
@@ -1405,6 +1418,7 @@ function OperationsDashboard() {
 function FarmerDashboard({ onNavigate }) {
   return <div className="page">
     <div className="flex-between mb-24"><div><h1 style={{fontSize:22,fontWeight:800}}>Good morning, Ama 🌱</h1><p className="text-muted">Your farm is growing. Here is today’s marketplace activity.</p></div><button className="btn btn-primary" onClick={()=>onNavigate('inventory')}>+ Add produce</button></div>
+    <FarmerAlerts />
     <FarmerOnboardingStatus status="in_review" requestNotes={[]}/>
     <div className="stats-grid mt-16">{[{label:'Active listings',value:'4',change:'+1 this week',icon:'🥬',bg:'var(--green-bg)'},{label:'Pending orders',value:'8',change:'3 need action',icon:'📦',bg:'var(--yellow-bg)'},{label:'This month',value:'GHS 2,480',change:'+18% vs last month',icon:'💰',bg:'var(--blue-bg)'},{label:'Avg. rating',value:'4.8',change:'24 reviews',icon:'★',bg:'var(--green-bg)'}].map(s=><div className="stat-card" key={s.label}><div className="flex-between"><span className="stat-label">{s.label}</span><span className="stat-accent" style={{background:s.bg}}>{s.icon}</span></div><div className="stat-value">{s.value}</div><div className="stat-change up">{s.change}</div></div>)}</div>
     <div className="grid-2 mb-24"><div className="card"><div className="flex-between mb-16"><div><div className="section-title">My produce</div><div className="section-sub">Manage availability and pricing</div></div><button className="btn btn-secondary btn-sm" onClick={()=>onNavigate('inventory')}>View all</button></div>{[['🍅','Roma Tomatoes','10 bags','GHS 85 / bag','Active'],['🌶️','Scotch Bonnet Peppers','5 crates','GHS 60 / crate','Active'],['🥬','Kontomire Leaves','2 baskets','GHS 25 / basket','Low stock']].map(p=><div className="row" key={p[1]}><span style={{fontSize:24}}>{p[0]}</span><span style={{flex:1,marginLeft:10}}><strong>{p[1]}</strong><br/><span className="text-muted">{p[2]} · {p[3]}</span></span><Badge type={p[4]==='Low stock'?'yellow':'green'}>{p[4]}</Badge></div>)}</div><div className="card"><div className="flex-between mb-16"><div><div className="section-title">Recent orders</div><div className="section-sub">Orders waiting for your action</div></div><button className="btn btn-secondary btn-sm" onClick={()=>onNavigate('orders')}>View orders</button></div>{[['#1042','Roma Tomatoes','3 bags','GHS 255','New order'],['#1039','Garden Eggs','2 bags','GHS 90','Ready for pickup'],['#1036','Kontomire Leaves','5 baskets','GHS 125','Delivered']].map(o=><div className="row" key={o[0]}><span style={{flex:1}}><strong>{o[0]} · {o[1]}</strong><br/><span className="text-muted">{o[2]} · {o[3]}</span></span><Badge type={o[4]==='New order'?'yellow':o[4]==='Delivered'?'green':'blue'}>{o[4]}</Badge></div>)}</div></div>

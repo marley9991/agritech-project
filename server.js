@@ -202,6 +202,35 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ════════════════════════════════════════════════════════════
+
+app.get('/api/notifications', requireAuth, async (req, res) => {
+  try {
+    const unreadOnly = String(req.query.unread || '').toLowerCase() === 'true';
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
+    const { rows } = await db.query(
+      `SELECT notification_id, channel, title, body, related_order_id, is_read, created_at
+       FROM notifications WHERE user_id = $1 ${unreadOnly ? 'AND is_read = false' : ''}
+       ORDER BY created_at DESC LIMIT $2`, [req.user.user_id, limit]
+    );
+    res.json({ notifications: rows, unread_count: rows.filter(n => !n.is_read).length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/notifications/:notificationId/read', requireAuth, async (req, res) => {
+  try {
+    const { rows: [notification] } = await db.query(
+      `UPDATE notifications SET is_read = true
+       WHERE notification_id = $1 AND user_id = $2
+       RETURNING notification_id, is_read`, [req.params.notificationId, req.user.user_id]
+    );
+    if (!notification) return res.status(404).json({ error: 'Notification not found' });
+    res.json({ success: true, notification });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ════════════════════════════════════════════════════════════
 // FARMER ONBOARDING & OPERATIONS REVIEW
 // ════════════════════════════════════════════════════════════
 
@@ -573,9 +602,68 @@ app.post('/api/logistics/match-driver', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/driver/jobs — available jobs first, then the driver's assigned jobs.
+app.get('/api/driver/jobs', requireAuth, requireRole('driver'), async (req, res) => {
+  try {
+    const ambientTemp = Number(req.query.ambient_temp_c || 32);
+    const { rows } = await db.query(
+      `SELECT lt.trip_id, lt.order_id, lt.driver_id, lt.status AS trip_status,
+              lt.pickup_latitude, lt.pickup_longitude, lt.dropoff_latitude, lt.dropoff_longitude,
+              lt.distance_km, lt.estimated_cost, lt.estimated_duration_minutes,
+              o.quantity_ordered, o.grand_total, o.delivery_address, o.created_at,
+              p.crop_name, p.crop_category, p.harvested_at, p.unit,
+              u.full_name AS farmer_name, r.region_name
+       FROM logistics_trips lt
+       JOIN orders o ON o.order_id = lt.order_id
+       JOIN products p ON p.product_id = o.product_id
+       JOIN users u ON u.user_id = o.farmer_id
+       LEFT JOIN regions r ON r.region_id = p.region_id
+       WHERE (lt.status = 'requested' AND lt.driver_id IS NULL) OR lt.driver_id = $1
+       ORDER BY CASE WHEN lt.driver_id = $1 THEN 0 ELSE 1 END, lt.created_at ASC`, [req.user.user_id]
+    );
+    const jobs = rows.map(job => ({
+      ...job,
+      spoilage_score: spoilageScore(job.harvested_at, job.crop_category, ambientTemp),
+      is_high_spoilage: spoilageScore(job.harvested_at, job.crop_category, ambientTemp) > 70,
+    })).sort((a, b) => Number(b.is_high_spoilage) - Number(a.is_high_spoilage) || new Date(a.created_at) - new Date(b.created_at));
+    res.json({ jobs, count: jobs.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/driver/jobs/:tripId/accept — atomically claim a requested job.
+app.post('/api/driver/jobs/:tripId/accept', requireAuth, requireRole('driver'), async (req, res) => {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [trip] } = await client.query(
+      `SELECT lt.trip_id, lt.order_id, lt.status, lt.driver_id, p.harvested_at, p.crop_category
+       FROM logistics_trips lt JOIN products p ON p.product_id = (SELECT product_id FROM orders WHERE order_id = lt.order_id)
+       WHERE lt.trip_id = $1 FOR UPDATE`, [req.params.tripId]
+    );
+    if (!trip) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Delivery job not found' }); }
+    if (trip.driver_id && trip.driver_id !== req.user.user_id) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Job has already been assigned' }); }
+    if (trip.status !== 'requested' && trip.driver_id !== req.user.user_id) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Job is no longer available' }); }
+    const { rows: [updated] } = await client.query(
+      `UPDATE logistics_trips SET driver_id = $1, status = 'matched', matched_at = COALESCE(matched_at, now()), updated_at = now()
+       WHERE trip_id = $2 RETURNING *`, [req.user.user_id, trip.trip_id]
+    );
+    await client.query(`UPDATE orders SET status='matched', updated_at=now() WHERE order_id=$1`, [trip.order_id]);
+    await client.query(`INSERT INTO notifications (user_id, channel, title, body, related_order_id) VALUES ($1,'app_push',$2,$3,$4)`, [req.user.user_id, 'Delivery job accepted', `You accepted delivery job #${trip.order_id}.`, trip.order_id]);
+    await client.query('COMMIT');
+    res.status(201).json({ success: true, trip: updated, spoilage_score: spoilageScore(trip.harvested_at, trip.crop_category) });
+  } catch (err) { await client.query('ROLLBACK').catch(() => {}); res.status(500).json({ error: err.message }); }
+  finally { client.release(); }
+});
+
 app.patch('/api/logistics/trips/:tripId/status', requireAuth, async (req, res) => {
   try {
     const { status, latitude, longitude } = req.body;
+    const allowedStatuses = new Set(['picked_up', 'in_transit', 'delivered', 'cancelled']);
+    if (!allowedStatuses.has(status)) return res.status(400).json({ error: 'Invalid trip status' });
+    const { rows: [ownership] } = await db.query(`SELECT driver_id FROM logistics_trips WHERE trip_id=$1`, [req.params.tripId]);
+    if (!ownership) return res.status(404).json({ error: 'Trip not found' });
+    if (req.user.role === 'driver' && ownership.driver_id !== req.user.user_id) return res.status(403).json({ error: 'You do not own this trip' });
+    if (!['driver','operations','admin'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
     await db.query(
       `UPDATE logistics_trips SET status=$1, updated_at=now() WHERE trip_id=$2`,
       [status, req.params.tripId]
